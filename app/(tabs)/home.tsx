@@ -1,0 +1,326 @@
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, RefreshControl } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useUserStore } from '@/store/userStore';
+import { useTransactionStore } from '@/store/transactionStore';
+import { useInsightsStore } from '@/store/insightsStore';
+import { formatCurrency, formatRelativeDate } from '@/utils/formatters';
+import { router } from 'expo-router';
+
+export default function HomeScreen() {
+  const { user } = useUserStore();
+  const { getTotalIncome, getTotalExpenses, getBalance, getRecentTransactions, transactions, syncWithBackend, loading } = useTransactionStore();
+  const { insights, getUnreadCount } = useInsightsStore();
+
+  useEffect(() => {
+    if (user?.id) {
+      syncWithBackend(user.id);
+    }
+  }, [user?.id]);
+
+  const onRefresh = () => {
+    if (user?.id) {
+      syncWithBackend(user.id);
+    }
+  };
+
+  if (!user) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <View style={styles.loading}>
+          <Text style={styles.loadingText}>Cargando...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const totalIncome = getTotalIncome();
+  const totalExpenses = getTotalExpenses();
+  const balance = getBalance();
+  const recentTransactions = getRecentTransactions(5);
+  const unreadInsights = getUnreadCount();
+
+  const planColor = user.plan === 'free' ? '#6B7280' : user.plan === 'premium' ? '#00D4AA' : '#6C5CE7';
+
+  const avgDailyExpense = totalExpenses / 30;
+  const daysRemaining = balance > 0 ? Math.floor(balance / avgDailyExpense) : 0;
+  const showWarning = daysRemaining < 7 && daysRemaining > 0 && totalExpenses > 0;
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+      <ScrollView 
+        style={styles.scroll} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={onRefresh} tintColor="#00D4AA" />
+        }
+        contentContainerStyle={{ paddingBottom: 100 }}
+      >
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/profile')}>
+              {user.photoURL ? (
+                <Image source={{ uri: user.photoURL }} style={styles.profilePhoto} />
+              ) : (
+                <View style={styles.profilePhotoPlaceholder}>
+                  <Text style={styles.profilePhotoText}>{user.fullName.charAt(0).toUpperCase()}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            <View style={styles.headerText}>
+              <Text style={styles.greeting}>Hola, {user.fullName.split(' ')[0]}</Text>
+              <Text style={styles.subtitle}>Bienvenido de vuelta</Text>
+            </View>
+          </View>
+          <TouchableOpacity 
+            style={[styles.planBadge, { backgroundColor: planColor }]}
+            onPress={() => router.push('/(tabs)/upgrade')}
+          >
+            <Text style={styles.planText}>{user.plan.toUpperCase()}</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.balanceCard}>
+          <Text style={styles.balanceLabel}>Balance Total</Text>
+          <Text style={[styles.balanceAmount, { color: balance >= 0 ? '#00D4AA' : '#FF7675' }]}>
+            {formatCurrency(balance)}
+          </Text>
+
+          <View style={styles.balanceRow}>
+            <View style={styles.balanceItem}>
+              <Text style={styles.balanceItemIcon}>↑</Text>
+              <View>
+                <Text style={styles.balanceItemLabel}>Ingresos</Text>
+                <Text style={styles.incomeAmount}>{formatCurrency(totalIncome)}</Text>
+              </View>
+            </View>
+            <View style={styles.divider} />
+            <View style={styles.balanceItem}>
+              <Text style={styles.balanceItemIcon}>↓</Text>
+              <View>
+                <Text style={styles.balanceItemLabel}>Gastos</Text>
+                <Text style={styles.expenseAmount}>{formatCurrency(totalExpenses)}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {showWarning && (
+          <View style={styles.warningCard}>
+            <Text style={styles.warningIcon}>⚠️</Text>
+            <View style={styles.warningContent}>
+              <Text style={styles.warningTitle}>¡Atención con tu saldo!</Text>
+              <Text style={styles.warningText}>
+                Al ritmo actual de gastos, te quedarás sin saldo en aproximadamente {daysRemaining} días. Considera reducir gastos no esenciales.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {unreadInsights > 0 && (
+          <TouchableOpacity 
+            style={styles.insightsCard}
+            onPress={() => router.push('/(tabs)/insights')}
+          >
+            <View style={styles.insightsHeader}>
+              <Text style={styles.insightsIcon}>💡</Text>
+              <View style={styles.insightsText}>
+                <Text style={styles.insightsTitle}>Consejos Personalizados</Text>
+                <Text style={styles.insightsSubtitle}>
+                  Tienes {unreadInsights} recomendación{unreadInsights > 1 ? 'es' : ''} nueva{unreadInsights > 1 ? 's' : ''}
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.insightsArrow}>›</Text>
+          </TouchableOpacity>
+        )}
+
+        {user.plan === 'free' && (
+          <TouchableOpacity 
+            style={styles.upgradeCard}
+            onPress={() => router.push('/(tabs)/upgrade')}
+          >
+            <View style={styles.upgradeContent}>
+              <Text style={styles.upgradeIcon}>⭐</Text>
+              <View style={styles.upgradeText}>
+                <Text style={styles.upgradeTitle}>Desbloquea Análisis Avanzados</Text>
+                <Text style={styles.upgradeSubtitle}>
+                  6 gráficas interactivas • Exportar PDF/Excel • OCR • IA ilimitada
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.upgradeArrow}>›</Text>
+          </TouchableOpacity>
+        )}
+
+        <View style={styles.actions}>
+          <Text style={styles.sectionTitle}>Acciones Rápidas</Text>
+          <View style={styles.actionGrid}>
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={() => router.push('/(tabs)/add')}
+            >
+              <Text style={styles.actionIcon}>➕</Text>
+              <Text style={styles.actionLabel}>Agregar</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.actionButton, !user.isPremium && styles.actionButtonLocked]}
+              onPress={() => {
+                if (user.isPremium) {
+                  router.push('/(tabs)/ocr');
+                } else {
+                  router.push('/(tabs)/upgrade');
+                }
+              }}
+            >
+              <Text style={styles.actionIcon}>📸</Text>
+              <Text style={styles.actionLabel}>Escanear</Text>
+              {!user.isPremium && <View style={styles.lockBadge}><Text style={styles.lockBadgeText}>PRO</Text></View>}
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.actionButton, !user.isPremium && styles.actionButtonLocked]}
+              onPress={() => {
+                if (user.isPremium) {
+                  router.push('/(tabs)/reports');
+                } else {
+                  router.push('/(tabs)/upgrade');
+                }
+              }}
+            >
+              <Text style={styles.actionIcon}>📊</Text>
+              <Text style={styles.actionLabel}>Reportes</Text>
+              {!user.isPremium && <View style={styles.lockBadge}><Text style={styles.lockBadgeText}>PRO</Text></View>}
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={() => router.push('/(tabs)/ai-assistant')}
+            >
+              <Text style={styles.actionIcon}>🤖</Text>
+              <Text style={styles.actionLabel}>Asistente IA</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.transactions}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Transacciones Recientes</Text>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/transactions')}>
+              <Text style={styles.seeAll}>Ver todo</Text>
+            </TouchableOpacity>
+          </View>
+
+          {recentTransactions.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateIcon}>📝</Text>
+              <Text style={styles.emptyStateText}>No tienes transacciones aún</Text>
+              <TouchableOpacity 
+                style={styles.emptyStateButton}
+                onPress={() => router.push('/(tabs)/add')}
+              >
+                <Text style={styles.emptyStateButtonText}>Agregar primera transacción</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            recentTransactions.map((transaction) => (
+              <View key={transaction.id} style={styles.transactionCard}>
+                <View style={styles.transactionIcon}>
+                  <Text style={styles.transactionIconText}>
+                    {transaction.type === 'income' ? '💼' : '🛒'}
+                  </Text>
+                </View>
+                <View style={styles.transactionInfo}>
+                  <Text style={styles.transactionDescription}>{transaction.description}</Text>
+                  <Text style={styles.transactionCategory}>{transaction.category}</Text>
+                  <Text style={styles.transactionDate}>{formatRelativeDate(transaction.date)}</Text>
+                </View>
+                <Text
+                  style={[
+                    styles.transactionAmount,
+                    { color: transaction.type === 'income' ? '#00D4AA' : '#FF7675' },
+                  ]}
+                >
+                  {transaction.type === 'income' ? '+' : '-'}
+                  {formatCurrency(transaction.amount)}
+                </Text>
+              </View>
+            ))
+          )}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#0A0E27' },
+  loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { fontSize: 18, color: '#9CA3AF' },
+  scroll: { flex: 1 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center' },
+  profilePhoto: { width: 50, height: 50, borderRadius: 25, marginRight: 12 },
+  profilePhotoPlaceholder: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#00D4AA', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  profilePhotoText: { fontSize: 24, fontWeight: 'bold', color: '#0A0E27' },
+  headerText: {},
+  greeting: { fontSize: 24, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 2 },
+  subtitle: { fontSize: 13, color: '#9CA3AF' },
+  planBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  planText: { fontSize: 11, fontWeight: 'bold', color: '#FFFFFF' },
+  balanceCard: { backgroundColor: '#151B3D', borderRadius: 16, padding: 24, marginHorizontal: 20, marginBottom: 16 },
+  balanceLabel: { fontSize: 14, color: '#9CA3AF', marginBottom: 8 },
+  balanceAmount: { fontSize: 40, fontWeight: 'bold', marginBottom: 24 },
+  balanceRow: { flexDirection: 'row', alignItems: 'center' },
+  balanceItem: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  balanceItemIcon: { fontSize: 24 },
+  balanceItemLabel: { fontSize: 12, color: '#9CA3AF', marginBottom: 4 },
+  incomeAmount: { fontSize: 18, fontWeight: '600', color: '#00D4AA' },
+  expenseAmount: { fontSize: 18, fontWeight: '600', color: '#FF7675' },
+  divider: { width: 1, height: 50, backgroundColor: '#2D3748', marginHorizontal: 16 },
+  warningCard: { flexDirection: 'row', backgroundColor: '#1E2749', borderRadius: 12, padding: 16, marginHorizontal: 20, marginBottom: 16, borderWidth: 2, borderColor: '#FF7675' },
+  warningIcon: { fontSize: 32, marginRight: 12 },
+  warningContent: { flex: 1 },
+  warningTitle: { fontSize: 16, fontWeight: 'bold', color: '#FF7675', marginBottom: 4 },
+  warningText: { fontSize: 13, color: '#9CA3AF', lineHeight: 18 },
+  insightsCard: { backgroundColor: '#1E2749', borderRadius: 12, padding: 16, marginHorizontal: 20, marginBottom: 16, flexDirection: 'row', alignItems: 'center', borderWidth: 2, borderColor: '#FFD700' },
+  insightsHeader: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  insightsIcon: { fontSize: 28, marginRight: 12 },
+  insightsText: { flex: 1 },
+  insightsTitle: { fontSize: 16, fontWeight: '600', color: '#FFFFFF', marginBottom: 2 },
+  insightsSubtitle: { fontSize: 12, color: '#9CA3AF' },
+  insightsArrow: { fontSize: 24, color: '#9CA3AF' },
+  upgradeCard: { backgroundColor: '#151B3D', borderRadius: 12, padding: 16, marginHorizontal: 20, marginBottom: 16, flexDirection: 'row', alignItems: 'center', borderWidth: 2, borderColor: '#00D4AA' },
+  upgradeContent: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  upgradeIcon: { fontSize: 32, marginRight: 12 },
+  upgradeText: { flex: 1 },
+  upgradeTitle: { fontSize: 16, fontWeight: '600', color: '#FFFFFF', marginBottom: 2 },
+  upgradeSubtitle: { fontSize: 11, color: '#9CA3AF' },
+  upgradeArrow: { fontSize: 24, color: '#9CA3AF' },
+  actions: { paddingHorizontal: 20, marginBottom: 24 },
+  sectionTitle: { fontSize: 18, fontWeight: '600', color: '#FFFFFF', marginBottom: 12 },
+  actionGrid: { flexDirection: 'row', gap: 12 },
+  actionButton: { flex: 1, backgroundColor: '#151B3D', borderRadius: 12, padding: 16, alignItems: 'center', position: 'relative' },
+  actionButtonLocked: { opacity: 0.6 },
+  actionIcon: { fontSize: 28, marginBottom: 8 },
+  actionLabel: { fontSize: 12, color: '#9CA3AF' },
+  lockBadge: { position: 'absolute', top: 8, right: 8, backgroundColor: '#00D4AA', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  lockBadgeText: { fontSize: 9, fontWeight: 'bold', color: '#0A0E27' },
+  transactions: { paddingHorizontal: 20, paddingBottom: 40 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  seeAll: { fontSize: 14, color: '#00D4AA', fontWeight: '600' },
+  emptyState: { backgroundColor: '#151B3D', borderRadius: 12, padding: 32, alignItems: 'center' },
+  emptyStateIcon: { fontSize: 48, marginBottom: 12 },
+  emptyStateText: { fontSize: 15, color: '#9CA3AF', marginBottom: 16, textAlign: 'center' },
+  emptyStateButton: { backgroundColor: '#00D4AA', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
+  emptyStateButtonText: { fontSize: 14, fontWeight: '600', color: '#0A0E27' },
+  transactionCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#151B3D', borderRadius: 12, padding: 12, marginBottom: 8 },
+  transactionIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#1E2749', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  transactionIconText: { fontSize: 20 },
+  transactionInfo: { flex: 1 },
+  transactionDescription: { fontSize: 15, color: '#FFFFFF', marginBottom: 2 },
+  transactionCategory: { fontSize: 12, color: '#9CA3AF', marginBottom: 2 },
+  transactionDate: { fontSize: 11, color: '#6B7280' },
+  transactionAmount: { fontSize: 16, fontWeight: '600' },
+});

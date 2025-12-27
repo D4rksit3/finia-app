@@ -1,0 +1,467 @@
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useUserStore } from '@/store/userStore';
+import { useTransactionStore } from '@/store/transactionStore';
+import { router } from 'expo-router';
+import axios from 'axios';
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.40.246:3000/api';
+
+type TransactionType = 'income' | 'expense';
+
+const categories = {
+  expense: ['Comida', 'Transporte', 'Hogar', 'Salud', 'Entretenimiento', 'Educación', 'Otros'],
+  income: ['Salario', 'Freelance', 'Inversiones', 'Ventas', 'Otros'],
+};
+
+export default function AddScreen() {
+  const insets = useSafeAreaInsets();
+  const { user, canAddTransaction, incrementTransactions } = useUserStore();
+  const { addTransaction, syncWithBackend } = useTransactionStore();
+  
+  const [type, setType] = useState<TransactionType>('expense');
+  const [amount, setAmount] = useState('');
+  const [category, setCategory] = useState('Comida');
+  const [description, setDescription] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [recognizedText, setRecognizedText] = useState('');
+  const [recognition, setRecognition] = useState<any>(null);
+
+  useEffect(() => {
+    // Inicializar Web Speech API si está disponible
+    if (typeof window !== 'undefined' && 'webkitSpeechRecognition' in window) {
+      // @ts-ignore
+      const recognitionInstance = new window.webkitSpeechRecognition();
+      recognitionInstance.lang = 'es-PE';
+      recognitionInstance.continuous = false;
+      recognitionInstance.interimResults = false;
+
+      recognitionInstance.onstart = () => {
+        console.log('🎤 Voice recognition started');
+        setIsListening(true);
+      };
+
+      recognitionInstance.onresult = (event: any) => {
+        const text = event.results[0][0].transcript;
+        console.log('🎤 Recognized:', text);
+        setRecognizedText(text);
+        parseVoiceInput(text);
+      };
+
+      recognitionInstance.onerror = (event: any) => {
+        console.error('🎤 Error:', event.error);
+        setIsListening(false);
+        if (event.error !== 'no-speech') {
+          Alert.alert('Error', 'No se pudo reconocer la voz. Intenta de nuevo.');
+        }
+      };
+
+      recognitionInstance.onend = () => {
+        console.log('🎤 Voice recognition ended');
+        setIsListening(false);
+      };
+
+      setRecognition(recognitionInstance);
+    }
+  }, []);
+
+  const startListening = () => {
+    if (recognition) {
+      setRecognizedText('');
+      recognition.start();
+    } else {
+      Alert.alert(
+        'No disponible',
+        'El reconocimiento de voz no está disponible en este dispositivo. Por favor usa la entrada manual.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const stopListening = () => {
+    if (recognition) {
+      recognition.stop();
+    }
+  };
+
+  const parseVoiceInput = (text: string) => {
+    const lowerText = text.toLowerCase();
+    
+    // Detectar tipo (ingreso o gasto)
+    let detectedType: TransactionType = 'expense';
+    if (lowerText.includes('ingreso') || lowerText.includes('ganancia') || lowerText.includes('cobré') || lowerText.includes('recibí')) {
+      detectedType = 'income';
+      setType('income');
+    } else if (lowerText.includes('gasto') || lowerText.includes('gasté') || lowerText.includes('pagué') || lowerText.includes('compré')) {
+      detectedType = 'expense';
+      setType('expense');
+    }
+
+    // Detectar monto
+    const montoPatterns = [
+      /(\d+\.?\d*)\s*(soles?|nuevos soles)/i,
+      /(\d+\.?\d*)\s*s\/?\.?/i,
+      /(\d+)\s*(con\s*(\d+))?/i,
+    ];
+
+    let detectedAmount = '';
+    for (const pattern of montoPatterns) {
+      const match = lowerText.match(pattern);
+      if (match) {
+        if (match[3]) {
+          detectedAmount = `${match[1]}.${match[3]}`;
+        } else {
+          detectedAmount = match[1];
+        }
+        setAmount(detectedAmount);
+        break;
+      }
+    }
+
+    // Detectar categoría
+    const categoryKeywords = {
+      'Comida': ['comida', 'almuerzo', 'cena', 'desayuno', 'restaurant', 'comí', 'pizza', 'pollo', 'ceviche'],
+      'Transporte': ['transporte', 'taxi', 'uber', 'gasolina', 'pasaje', 'bus', 'combi'],
+      'Hogar': ['casa', 'hogar', 'alquiler', 'luz', 'agua', 'internet'],
+      'Salud': ['salud', 'farmacia', 'medicina', 'doctor', 'médico', 'clínica'],
+      'Entretenimiento': ['cine', 'diversión', 'juego', 'netflix', 'spotify'],
+      'Educación': ['educación', 'curso', 'libro', 'universidad', 'colegio'],
+      'Salario': ['salario', 'sueldo', 'pago', 'cobré'],
+      'Freelance': ['freelance', 'trabajo', 'proyecto'],
+      'Ventas': ['venta', 'vendí'],
+    };
+
+    let detectedCategory = detectedType === 'expense' ? 'Comida' : 'Salario';
+    for (const [cat, keywords] of Object.entries(categoryKeywords)) {
+      for (const keyword of keywords) {
+        if (lowerText.includes(keyword)) {
+          if (detectedType === 'expense' && categories.expense.includes(cat)) {
+            detectedCategory = cat;
+            break;
+          } else if (detectedType === 'income' && categories.income.includes(cat)) {
+            detectedCategory = cat;
+            break;
+          }
+        }
+      }
+    }
+    setCategory(detectedCategory);
+
+    // Extraer descripción
+    let desc = text
+      .replace(/\d+\.?\d*/g, '')
+      .replace(/soles?|nuevos soles|s\/\.?/gi, '')
+      .replace(/gasté|pagué|compré|ingreso|ganancia|cobré|recibí/gi, '')
+      .replace(/en|de|para|por/gi, '')
+      .trim();
+    
+    if (desc.length > 3) {
+      setDescription(desc);
+    }
+
+    // Mostrar resumen
+    Alert.alert(
+      '🎤 Reconocido',
+      `Tipo: ${detectedType === 'income' ? 'Ingreso' : 'Gasto'}\nMonto: S/ ${detectedAmount || '0'}\nCategoría: ${detectedCategory}\nDescripción: ${desc || 'Sin descripción'}`,
+      [
+        { text: 'Editar', style: 'cancel' },
+        { 
+          text: 'Confirmar', 
+          onPress: () => {
+            if (detectedAmount) {
+              handleSubmit();
+            }
+          }
+        },
+      ]
+    );
+  };
+
+  const handleTypeChange = (newType: TransactionType) => {
+    setType(newType);
+    setCategory(newType === 'expense' ? 'Comida' : 'Salario');
+  };
+
+  const handleSubmit = async () => {
+    if (!amount || !category || !description) {
+      Alert.alert('Error', 'Por favor completa todos los campos');
+      return;
+    }
+
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      Alert.alert('Error', 'Ingresa un monto válido');
+      return;
+    }
+
+    if (!canAddTransaction()) {
+      Alert.alert(
+        'Límite Alcanzado',
+        'Has alcanzado el límite de 50 transacciones mensuales del plan FREE. Actualiza a Premium para transacciones ilimitadas.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Ver Planes', onPress: () => router.push('/(tabs)/upgrade') },
+        ]
+      );
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const today = new Date();
+      const dateString = today.toISOString().split('T')[0];
+
+      const response = await axios.post(`${API_URL}/transactions`, {
+        userId: user?.id,
+        type,
+        amount: numAmount,
+        category,
+        description,
+        transactionDate: dateString,
+      });
+
+      addTransaction({
+        id: response.data.transaction.id.toString(),
+        userId: user?.id,
+        type,
+        amount: numAmount,
+        category,
+        description,
+        date: new Date(),
+        currency: 'PEN',
+      });
+
+      incrementTransactions();
+
+      if (user?.id) {
+        await syncWithBackend(user.id);
+      }
+
+      Alert.alert('¡Listo! ✅', 'Transacción agregada exitosamente', [
+        { text: 'Agregar otra', onPress: () => resetForm() },
+        { text: 'Ver Dashboard', onPress: () => router.push('/(tabs)/home') },
+      ]);
+    } catch (error: any) {
+      console.error('Error creating transaction:', error);
+      
+      if (error.response?.status === 403) {
+        Alert.alert('Límite Alcanzado', error.response.data.message);
+      } else {
+        Alert.alert('Error', 'No se pudo crear la transacción. Intenta nuevamente.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetForm = () => {
+    setAmount('');
+    setDescription('');
+    setCategory(type === 'expense' ? 'Comida' : 'Salario');
+    setRecognizedText('');
+  };
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={0}
+      >
+        <ScrollView 
+          style={styles.scroll} 
+          keyboardShouldPersistTaps="handled" 
+          contentContainerStyle={{ paddingBottom: 100 + insets.bottom }}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.content}>
+            <View style={styles.headerRow}>
+              <Text style={styles.title}>Agregar Transacción</Text>
+              <TouchableOpacity 
+                style={[styles.voiceButton, isListening && styles.voiceButtonActive]} 
+                onPress={isListening ? stopListening : startListening}
+              >
+                <Text style={styles.voiceIcon}>{isListening ? '⏸️' : '🎤'}</Text>
+              </TouchableOpacity>
+            </View>
+
+            {isListening && (
+              <View style={styles.listeningCard}>
+                <Text style={styles.listeningIcon}>🎙️</Text>
+                <View style={styles.listeningContent}>
+                  <Text style={styles.listeningTitle}>Escuchando...</Text>
+                  <Text style={styles.listeningText}>
+                    Di algo como: "Gasté 50 soles en almuerzo"
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {recognizedText !== '' && !isListening && (
+              <View style={styles.recognizedCard}>
+                <Text style={styles.recognizedIcon}>💬</Text>
+                <View style={styles.recognizedContent}>
+                  <Text style={styles.recognizedTitle}>Reconocido:</Text>
+                  <Text style={styles.recognizedText}>{recognizedText}</Text>
+                </View>
+              </View>
+            )}
+
+            <View style={styles.typeSelector}>
+              <TouchableOpacity
+                style={[styles.typeButton, type === 'expense' && styles.typeButtonActive]}
+                onPress={() => handleTypeChange('expense')}
+              >
+                <Text style={[styles.typeIcon, type === 'expense' && styles.typeIconActive]}>💸</Text>
+                <Text style={[styles.typeText, type === 'expense' && styles.typeTextActive]}>Gasto</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.typeButton, type === 'income' && styles.typeButtonActive]}
+                onPress={() => handleTypeChange('income')}
+              >
+                <Text style={[styles.typeIcon, type === 'income' && styles.typeIconActive]}>💰</Text>
+                <Text style={[styles.typeText, type === 'income' && styles.typeTextActive]}>Ingreso</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Monto</Text>
+              <View style={styles.amountContainer}>
+                <Text style={styles.currency}>S/</Text>
+                <TextInput
+                  style={styles.amountInput}
+                  placeholder="0.00"
+                  placeholderTextColor="#6B7280"
+                  keyboardType="decimal-pad"
+                  value={amount}
+                  onChangeText={setAmount}
+                  returnKeyType="next"
+                />
+              </View>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Categoría</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categories}>
+                {categories[type].map((cat) => (
+                  <TouchableOpacity
+                    key={cat}
+                    style={[styles.categoryButton, category === cat && styles.categoryButtonActive]}
+                    onPress={() => setCategory(cat)}
+                  >
+                    <Text style={[styles.categoryText, category === cat && styles.categoryTextActive]}>
+                      {cat}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Descripción</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Ej: Almuerzo con familia"
+                placeholderTextColor="#6B7280"
+                value={description}
+                onChangeText={setDescription}
+                maxLength={100}
+                returnKeyType="done"
+                blurOnSubmit={true}
+              />
+              <Text style={styles.hint}>{description.length}/100</Text>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+              onPress={handleSubmit}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#0A0E27" />
+              ) : (
+                <Text style={styles.submitButtonText}>Agregar Transacción</Text>
+              )}
+            </TouchableOpacity>
+
+            {!user?.isPremium && (
+              <View style={styles.warningCard}>
+                <Text style={styles.warningIcon}>⚠️</Text>
+                <Text style={styles.warningText}>
+                  Plan FREE: {user?.transactionsThisMonth || 0}/50 transacciones este mes
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.voiceExamplesCard}>
+              <Text style={styles.voiceExamplesTitle}>💡 Ejemplos de comandos de voz:</Text>
+              <Text style={styles.voiceExample}>• "Gasté 50 soles en almuerzo"</Text>
+              <Text style={styles.voiceExample}>• "Pagué 120 en transporte"</Text>
+              <Text style={styles.voiceExample}>• "Ingreso de 2000 soles por salario"</Text>
+              <Text style={styles.voiceExample}>• "Compré medicina por 35 soles"</Text>
+              <Text style={styles.voiceExample}>• "Recibí 500 por freelance"</Text>
+              {!recognition && (
+                <Text style={styles.voiceNote}>
+                  ℹ️ El reconocimiento de voz funciona mejor en navegadores web (Chrome, Safari)
+                </Text>
+              )}
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#0A0E27' },
+  scroll: { flex: 1 },
+  content: { padding: 20 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
+  title: { fontSize: 28, fontWeight: 'bold', color: '#FFFFFF' },
+  voiceButton: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#151B3D', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#00D4AA' },
+  voiceButtonActive: { backgroundColor: '#00D4AA' },
+  voiceIcon: { fontSize: 24 },
+  listeningCard: { flexDirection: 'row', backgroundColor: '#1E2749', borderRadius: 12, padding: 16, marginBottom: 16, borderWidth: 2, borderColor: '#00D4AA' },
+  listeningIcon: { fontSize: 32, marginRight: 12 },
+  listeningContent: { flex: 1 },
+  listeningTitle: { fontSize: 16, fontWeight: 'bold', color: '#00D4AA', marginBottom: 4 },
+  listeningText: { fontSize: 13, color: '#9CA3AF' },
+  recognizedCard: { flexDirection: 'row', backgroundColor: '#151B3D', borderRadius: 12, padding: 16, marginBottom: 16 },
+  recognizedIcon: { fontSize: 28, marginRight: 12 },
+  recognizedContent: { flex: 1 },
+  recognizedTitle: { fontSize: 14, fontWeight: '600', color: '#9CA3AF', marginBottom: 4 },
+  recognizedText: { fontSize: 15, color: '#FFFFFF', lineHeight: 20 },
+  typeSelector: { flexDirection: 'row', gap: 12, marginBottom: 24 },
+  typeButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#151B3D', borderRadius: 12, padding: 16, borderWidth: 2, borderColor: '#2D3748' },
+  typeButtonActive: { borderColor: '#00D4AA', backgroundColor: '#1E2749' },
+  typeIcon: { fontSize: 24, marginRight: 8 },
+  typeIconActive: {},
+  typeText: { fontSize: 16, fontWeight: '600', color: '#9CA3AF' },
+  typeTextActive: { color: '#00D4AA' },
+  field: { marginBottom: 24 },
+  label: { fontSize: 14, fontWeight: '600', color: '#9CA3AF', marginBottom: 8 },
+  amountContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#151B3D', borderRadius: 12, paddingHorizontal: 16, borderWidth: 2, borderColor: '#2D3748' },
+  currency: { fontSize: 24, fontWeight: 'bold', color: '#00D4AA', marginRight: 8 },
+  amountInput: { flex: 1, fontSize: 32, fontWeight: 'bold', color: '#FFFFFF', paddingVertical: 16 },
+  categories: { flexDirection: 'row' },
+  categoryButton: { backgroundColor: '#151B3D', borderRadius: 8, paddingHorizontal: 16, paddingVertical: 10, marginRight: 8, borderWidth: 2, borderColor: '#2D3748' },
+  categoryButtonActive: { backgroundColor: '#00D4AA', borderColor: '#00D4AA' },
+  categoryText: { fontSize: 14, fontWeight: '600', color: '#9CA3AF' },
+  categoryTextActive: { color: '#0A0E27' },
+  input: { backgroundColor: '#151B3D', borderRadius: 12, padding: 16, fontSize: 16, color: '#FFFFFF', borderWidth: 2, borderColor: '#2D3748' },
+  hint: { fontSize: 12, color: '#6B7280', textAlign: 'right', marginTop: 4 },
+  submitButton: { backgroundColor: '#00D4AA', borderRadius: 12, padding: 18, alignItems: 'center', marginTop: 8 },
+  submitButtonDisabled: { opacity: 0.5 },
+  submitButtonText: { fontSize: 18, fontWeight: 'bold', color: '#0A0E27' },
+  warningCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1E2749', borderRadius: 12, padding: 16, marginTop: 24, borderWidth: 1, borderColor: '#FFD700' },
+  warningIcon: { fontSize: 24, marginRight: 12 },
+  warningText: { flex: 1, fontSize: 13, color: '#9CA3AF' },
+  voiceExamplesCard: { backgroundColor: '#151B3D', borderRadius: 12, padding: 16, marginTop: 16 },
+  voiceExamplesTitle: { fontSize: 14, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 12 },
+  voiceExample: { fontSize: 13, color: '#9CA3AF', marginBottom: 6, paddingLeft: 8 },
+  voiceNote: { fontSize: 12, color: '#6B7280', marginTop: 12, fontStyle: 'italic' },
+});
