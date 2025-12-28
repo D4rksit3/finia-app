@@ -82,9 +82,6 @@ def enableMinifyInReleaseBuilds = (findProperty('android.enableMinifyInReleaseBu
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
 android {
-    configurations.all {
-        exclude group: 'com.android.support'
-    }
     ndkVersion rootProject.ext.ndkVersion
 
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -164,15 +161,11 @@ dependencies {
     def isWebpAnimatedEnabled = (findProperty('expo.webp.animated') ?: "") == "true";
 
     if (isGifEnabled) {
-        // For animated gif support
         implementation("com.facebook.fresco:animated-gif:${expoLibs.versions.fresco.get()}")
     }
-
     if (isWebpEnabled) {
-        // For webp support
         implementation("com.facebook.fresco:webpsupport:${expoLibs.versions.fresco.get()}")
         if (isWebpAnimatedEnabled) {
-            // Animated webp support
             implementation("com.facebook.fresco:animated-webp:${expoLibs.versions.fresco.get()}")
         }
     }
@@ -182,5 +175,23 @@ dependencies {
     } else {
         implementation jscFlavor
     }
-}
 
+    // ============================================
+    // SOLUCIÓN: EXCLUIR SUPPORT LIBRARY GLOBALMENTE
+    // ============================================
+    configurations.all {
+        exclude group: 'com.android.support'
+        
+        resolutionStrategy {
+            force 'androidx.core:core:1.13.1'
+            force 'androidx.appcompat:appcompat:1.6.1'
+            force 'androidx.browser:browser:1.5.0'
+            force 'androidx.versionedparcelable:versionedparcelable:1.1.1'
+        }
+    }
+    
+    implementation 'androidx.core:core:1.13.1'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.browser:browser:1.5.0'
+    implementation 'androidx.versionedparcelable:versionedparcelable:1.1.1'
+}

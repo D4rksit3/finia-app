@@ -251,7 +251,7 @@ class AuthService {
   }
 
   // ============================================
-  // TRADITIONAL SIGNIN (Fallback)
+  // TRADITIONAL SIGNIN (Fallback) - CORREGIDO
   // ============================================
 
   async signIn(
@@ -259,53 +259,50 @@ class AuthService {
     password: string
   ): Promise<{ user: AuthUser | null; error: string | null; requires2FA?: boolean }> {
     try {
-      console.log('🔐 Iniciando sesión:', email);
+      console.log('🔐 Iniciando sesión tradicional:', email);
 
-      // Por ahora usamos el endpoint de test
-      const response = await fetch(`${API_URL}/test/users`, {
-        method: 'GET',
+      // Usar endpoint de login real
+      const response = await fetch(`${API_URL}/auth/login`, {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          email,
+          password,
+        }),
       });
 
       const data = await response.json();
-      const users = data.users;
 
-      const foundUser = users.find((u: any) => 
-        u.email.toLowerCase() === email.toLowerCase()
-      );
-
-      if (!foundUser) {
-        return { 
-          user: null, 
-          error: 'Usuario no encontrado. Regístrate primero o usa Google.' 
-        };
+      if (!data.success || !data.token) {
+        throw new Error(data.error || 'Credenciales inválidas');
       }
 
+      // Guardar token REAL del backend
+      await this.saveToken(data.token);
+
       const user: AuthUser = {
-        id: foundUser.id.toString(),
-        email: foundUser.email,
-        fullName: foundUser.full_name,
-        plan: foundUser.plan,
+        id: data.user.id.toString(),
+        email: data.user.email,
+        fullName: data.user.fullName,
+        plan: data.user.plan,
         emailVerified: false,
         twoFactorEnabled: false,
+        memberSince: data.user.memberSince,
       };
 
-      // Guardar token fake para testing
-      const fakeToken = `fake_token_${user.id}`;
-      await this.saveToken(fakeToken);
       await this.saveUser(user);
 
-      console.log('✅ Login exitoso:', user.email);
+      console.log('✅ Login tradicional exitoso:', user.email);
 
       return { user, error: null };
 
     } catch (error: any) {
-      console.error('❌ Error en signin:', error);
+      console.error('❌ Error en signin tradicional:', error);
       return {
         user: null,
-        error: 'Error al iniciar sesión',
+        error: error.message || 'Error al iniciar sesión',
       };
     }
   }
@@ -429,6 +426,7 @@ class AuthService {
       }
 
       console.log('📊 Actualizando plan a:', plan);
+      console.log('🔑 Token:', token.substring(0, 20) + '...');
 
       const response = await fetch(`${API_URL}/users/update-plan`, {
         method: 'POST',
@@ -440,6 +438,8 @@ class AuthService {
       });
 
       const data = await response.json();
+
+      console.log('📥 Respuesta del servidor:', data);
 
       if (!data.success) {
         throw new Error(data.error || 'Error al actualizar plan');
