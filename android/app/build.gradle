@@ -82,6 +82,9 @@ def enableMinifyInReleaseBuilds = (findProperty('android.enableMinifyInReleaseBu
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
 android {
+    configurations.all {
+        exclude group: 'com.android.support'
+    }
     ndkVersion rootProject.ext.ndkVersion
 
     buildToolsVersion rootProject.ext.buildToolsVersion
@@ -180,3 +183,4 @@ dependencies {
         implementation jscFlavor
     }
 }
+
