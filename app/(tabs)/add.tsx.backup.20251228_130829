@@ -5,9 +5,8 @@ import { useUserStore } from '@/store/userStore';
 import { useTransactionStore } from '@/store/transactionStore';
 import { router } from 'expo-router';
 import axios from 'axios';
-import Voice from '@react-native-voice/voice';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://finia.seguricloud.com/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.40.246:3000/api';
 
 type TransactionType = 'income' | 'expense';
 
@@ -28,66 +27,62 @@ export default function AddScreen() {
   const [loading, setLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [recognizedText, setRecognizedText] = useState('');
+  const [recognition, setRecognition] = useState<any>(null);
 
   useEffect(() => {
-    // Configurar @react-native-voice/voice para React Native
-    Voice.onSpeechStart = () => {
-      console.log('🎤 Voice recognition started');
-      setIsListening(true);
-    };
+    // Inicializar Web Speech API si está disponible
+    if (typeof window !== 'undefined' && 'webkitSpeechRecognition' in window) {
+      // @ts-ignore
+      const recognitionInstance = new window.webkitSpeechRecognition();
+      recognitionInstance.lang = 'es-PE';
+      recognitionInstance.continuous = false;
+      recognitionInstance.interimResults = false;
 
-    Voice.onSpeechResults = (event: any) => {
-      if (event.value && event.value.length > 0) {
-        const text = event.value[0];
+      recognitionInstance.onstart = () => {
+        console.log('🎤 Voice recognition started');
+        setIsListening(true);
+      };
+
+      recognitionInstance.onresult = (event: any) => {
+        const text = event.results[0][0].transcript;
         console.log('🎤 Recognized:', text);
         setRecognizedText(text);
         parseVoiceInput(text);
-      }
-    };
+      };
 
-    Voice.onSpeechError = (event: any) => {
-      console.error('🎤 Error:', event.error);
-      setIsListening(false);
-      
-      // Error 7 = no speech detected (no mostrar alerta)
-      if (event.error?.code !== '7' && event.error?.code !== 7) {
-        Alert.alert('Error', 'No se pudo reconocer la voz. Intenta de nuevo.');
-      }
-    };
+      recognitionInstance.onerror = (event: any) => {
+        console.error('🎤 Error:', event.error);
+        setIsListening(false);
+        if (event.error !== 'no-speech') {
+          Alert.alert('Error', 'No se pudo reconocer la voz. Intenta de nuevo.');
+        }
+      };
 
-    Voice.onSpeechEnd = () => {
-      console.log('🎤 Voice recognition ended');
-      setIsListening(false);
-    };
+      recognitionInstance.onend = () => {
+        console.log('🎤 Voice recognition ended');
+        setIsListening(false);
+      };
 
-    // Cleanup al desmontar el componente
-    return () => {
-      Voice.destroy().then(Voice.removeAllListeners);
-    };
+      setRecognition(recognitionInstance);
+    }
   }, []);
 
-  const startListening = async () => {
-    try {
+  const startListening = () => {
+    if (recognition) {
       setRecognizedText('');
-      await Voice.start('es-PE'); // Español de Perú
-      console.log('✅ Voice started');
-    } catch (error: any) {
-      console.error('❌ Error starting voice:', error);
+      recognition.start();
+    } else {
       Alert.alert(
-        'Error',
-        'No se pudo iniciar el reconocimiento de voz. Verifica los permisos de micrófono.',
+        'No disponible',
+        'El reconocimiento de voz no está disponible en este dispositivo. Por favor usa la entrada manual.',
         [{ text: 'OK' }]
       );
-      setIsListening(false);
     }
   };
 
-  const stopListening = async () => {
-    try {
-      await Voice.stop();
-      console.log('✅ Voice stopped');
-    } catch (error: any) {
-      console.error('❌ Error stopping voice:', error);
+  const stopListening = () => {
+    if (recognition) {
+      recognition.stop();
     }
   };
 
@@ -408,9 +403,11 @@ export default function AddScreen() {
               <Text style={styles.voiceExample}>• "Ingreso de 2000 soles por salario"</Text>
               <Text style={styles.voiceExample}>• "Compré medicina por 35 soles"</Text>
               <Text style={styles.voiceExample}>• "Recibí 500 por freelance"</Text>
-              <Text style={styles.voiceNote}>
-                ℹ️ Presiona el botón del micrófono y di tu transacción
-              </Text>
+              {!recognition && (
+                <Text style={styles.voiceNote}>
+                  ℹ️ El reconocimiento de voz funciona mejor en navegadores web (Chrome, Safari)
+                </Text>
+              )}
             </View>
           </View>
         </ScrollView>
