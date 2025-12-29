@@ -15,8 +15,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useUserStore } from '@/store/userStore';
 import { router } from 'expo-router';
 import axios from 'axios';
-import auth from '@react-native-firebase/auth';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
+//import authService from '@/src/services/auth/authService';
+import authService from '../../src/services/auth/authService';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://finia.seguricloud.com/api';
 
@@ -24,9 +24,6 @@ console.log('🟢 API_URL from env:', process.env.EXPO_PUBLIC_API_URL);
 console.log('🟢 API_URL final:', API_URL);
 
 // Configurar Google Sign In
-GoogleSignin.configure({
-  webClientId: '17405051659-ci0icsc5rhv48m2r37eegkb8ngddbsvl.apps.googleusercontent.com',
-});
 
 export default function LoginScreen() {
   const { setUser } = useUserStore();
@@ -102,99 +99,67 @@ export default function LoginScreen() {
   // ============================================
   // LOGIN CON GOOGLE + FIREBASE
   // ============================================
-  const handleGoogleLogin = async () => {
-    try {
-      setLoadingGoogle(true);
-      console.log('🔐 Iniciando login con Google + Firebase...');
+  
 
-      // 1. Verificar Google Play Services
-      await GoogleSignin.hasPlayServices();
-      console.log('✅ Google Play Services disponible');
+// ============================================
+// LOGIN CON GOOGLE + FIREBASE
+// ============================================
+const handleGoogleLogin = async () => {
+  try {
+    setLoadingGoogle(true);
+    console.log('🔐 [LOGIN] Iniciando Google Sign-In...');
 
-      // 2. Obtener Google ID Token
-      const { idToken } = await GoogleSignin.signIn();
-      console.log('✅ Google ID Token obtenido');
+    // Usar el servicio centralizado
+    const { user, error } = await authService.signInWithGoogle();
 
-      if (!idToken) {
-        throw new Error('No se obtuvo ID Token de Google');
-      }
-
-      // 3. Crear credencial de Firebase
-      const googleCredential = auth.GoogleAuthProvider.credential(idToken);
-      console.log('✅ Credencial de Firebase creada');
-
-      // 4. Autenticar con Firebase
-      const userCredential = await auth().signInWithCredential(googleCredential);
-      console.log('✅ Autenticado con Firebase:', userCredential.user.email);
-
-      // 5. Obtener Firebase ID Token
-      const firebaseIdToken = await userCredential.user.getIdToken();
-      console.log('✅ Firebase ID Token obtenido');
-
-      // 6. Enviar al backend
-      console.log('📤 Enviando al backend:', API_URL);
-      const response = await axios.post(`${API_URL}/auth/firebase-login`, {
-        idToken: firebaseIdToken,
-      });
-
-      console.log('📥 Respuesta del backend:', response.data);
-
-      if (!response.data.success) {
-        throw new Error(response.data.error || 'Error al autenticar con el backend');
-      }
-
-      // 7. Guardar usuario en el store
-      setUser({
-        id: response.data.user.id.toString(),
-        email: response.data.user.email,
-        fullName: response.data.user.fullName,
-        photoURL: userCredential.user.photoURL || undefined,
-        plan: response.data.user.plan || 'free',
-        isPremium: response.data.user.plan === 'premium',
-        transactionsThisMonth: 0,
-      });
-
-      console.log('✅ Login completado exitosamente');
-
-      // 8. Navegar a tabs
-      router.replace('/(tabs)');
-
-      // 9. Mostrar mensaje de bienvenida
-      if (response.data.user.isNewUser) {
-        Alert.alert(
-          '¡Bienvenido! 🎉',
-          `Hola ${response.data.user.fullName}, tu cuenta ha sido creada exitosamente.`
-        );
-      } else {
-        Alert.alert(
-          '¡Bienvenido de vuelta! 👋',
-          `Hola ${response.data.user.fullName}`
-        );
-      }
-    } catch (error: any) {
-      console.error('❌ Error en Google login:', error);
-
-      // Usuario canceló el login (no mostrar error)
-      if (error.code === '12501') {
-        console.log('ℹ️ Usuario canceló el login');
-        return;
-      }
-
-      let errorMessage = 'No se pudo iniciar sesión con Google';
-
-      if (error.code === 'auth/account-exists-with-different-credential') {
-        errorMessage = 'Esta cuenta ya existe con otro método de inicio de sesión';
-      } else if (error.code === 'auth/network-request-failed') {
-        errorMessage = 'Error de red. Verifica tu conexión a internet';
-      } else if (error.message) {
-        errorMessage = error.message;
-      }
-
-      Alert.alert('Error', errorMessage);
-    } finally {
-      setLoadingGoogle(false);
+    if (error) {
+      throw new Error(error);
     }
-  };
+
+    if (!user) {
+      throw new Error('No se obtuvo información del usuario');
+    }
+
+    console.log('✅ [LOGIN] Usuario autenticado:', user.email);
+
+    // Guardar usuario en el store
+    setUser({
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      photoURL: user.photoURL,
+      plan: user.plan || 'free',
+      isPremium: user.isPremium || false,
+      transactionsThisMonth: user.transactionsThisMonth || 0,
+    });
+
+    console.log('✅ [LOGIN] Login completado exitosamente');
+
+    // Navegar a tabs
+    router.replace('/(tabs)');
+
+    // Mensaje de bienvenida
+    Alert.alert(
+      '¡Bienvenido! 👋',
+      `Hola ${user.fullName}`
+    );
+
+  } catch (error: any) {
+    console.error('❌ [LOGIN] Error:', error);
+
+    // Usuario canceló el login
+    if (error.code === '12501') {
+      console.log('ℹ️ Usuario canceló el login');
+      return;
+    }
+
+    Alert.alert('Error', error.message || 'No se pudo iniciar sesión con Google');
+  } finally {
+    setLoadingGoogle(false);
+  }
+};
+
+
 
   return (
     <SafeAreaView style={styles.container}>

@@ -30,15 +30,33 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE"
-      ]
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES"
+      ],
+      "googleServicesFile": "./google-services.json"
     },
     "plugins": [
       "expo-router",
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Permite a FINIA usar la cámara para escanear recibos y capturar comprobantes."
+        }
+      ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "FINIA necesita acceso a tus fotos para escanear recibos"
+          "photosPermission": "FINIA necesita acceso a tus fotos para adjuntar imágenes de recibos.",
+          "cameraPermission": "FINIA necesita acceso a la cámara para capturar imágenes de recibos."
+        }
+      ],
+      [
+        "@react-native-voice/voice",
+        {
+          "microphonePermission": "FINIA necesita acceso al micrófono para el reconocimiento de voz en transacciones.",
+          "speechRecognitionPermission": "FINIA necesita acceso al reconocimiento de voz para agregar transacciones hablando."
         }
       ]
     ],

@@ -6,6 +6,8 @@ import { useTransactionStore } from '@/store/transactionStore';
 import { router } from 'expo-router';
 import axios from 'axios';
 import Voice from '@react-native-voice/voice';
+//import permissionsService from '@/src/services/permissions/permissionsService';
+
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://finia.seguricloud.com/api';
 
@@ -66,21 +68,22 @@ export default function AddScreen() {
     };
   }, []);
 
-  const startListening = async () => {
-    try {
-      setRecognizedText('');
-      await Voice.start('es-PE'); // Español de Perú
-      console.log('✅ Voice started');
-    } catch (error: any) {
-      console.error('❌ Error starting voice:', error);
-      Alert.alert(
-        'Error',
-        'No se pudo iniciar el reconocimiento de voz. Verifica los permisos de micrófono.',
-        [{ text: 'OK' }]
-      );
-      setIsListening(false);
-    }
-  };
+  
+const startListening = async () => {
+  try {
+    setRecognizedText('');
+    await Voice.start('es-PE');
+    console.log('✅ Voice started');
+  } catch (error: any) {
+    console.error('❌ Error starting voice:', error);
+    Alert.alert(
+      'Error',
+      'No se pudo iniciar el reconocimiento de voz. Verifica los permisos de micrófono en la configuración del teléfono.',
+      [{ text: 'OK' }]
+    );
+    setIsListening(false);
+  }
+};
 
   const stopListening = async () => {
     try {
