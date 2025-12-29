@@ -5,11 +5,15 @@ import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://finia.seguricloud.com/api';
 
+// Web Client ID - tipo 3 del google-services.json
+const WEB_CLIENT_ID = '17405051659-ci0icsc5rhv48m2r37eegkb8ngddbsvl.apps.googleusercontent.com';
+
 // Configurar Google Sign In
 GoogleSignin.configure({
-  webClientId: '17405051659-ci0icsc5rhv48m2r37eegkb8ngddbsvl.apps.googleusercontent.com',
+  webClientId: WEB_CLIENT_ID,
   offlineAccess: false,
   forceCodeForRefreshToken: false,
+  scopes: ['email', 'profile'],
 });
 
 export interface AuthUser {
@@ -109,33 +113,43 @@ class AuthService {
   async signInWithGoogle(): Promise<{ user: AuthUser | null; error: string | null }> {
     try {
       console.log('🔐 === INICIANDO GOOGLE SIGN-IN ===');
+      console.log('🔐 Web Client ID:', WEB_CLIENT_ID);
       console.log('🔐 Paso 1: Verificando Google Play Services...');
 
       // 1. Verificar Google Play Services
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
       console.log('✅ Paso 1: Google Play Services disponible');
 
-      // 2. Obtener información de Google
+      // 2. Obtener información de Google CON idToken
       console.log('🔐 Paso 2: Llamando a GoogleSignin.signIn()...');
-      const userInfo = await GoogleSignin.signIn();
+      const userInfo = await GoogleSignin.signIn({
+        webClientId: WEB_CLIENT_ID,
+      });
       console.log('✅ Paso 2: GoogleSignin.signIn() completado');
-      console.log('📋 userInfo completo:', JSON.stringify(userInfo, null, 2));
+      console.log('📋 userInfo keys:', Object.keys(userInfo));
+      
+      // Log detallado de userInfo
+      try {
+        console.log('📋 userInfo completo:', JSON.stringify(userInfo, null, 2));
+      } catch (e) {
+        console.log('📋 No se pudo stringify userInfo');
+      }
 
       // Extraer idToken de diferentes ubicaciones posibles
       let idToken = null;
       
       // Opción 1: userInfo.idToken (versión antigua)
-      if (userInfo.idToken) {
+      if ('idToken' in userInfo && userInfo.idToken) {
         idToken = userInfo.idToken;
         console.log('✅ idToken encontrado en userInfo.idToken');
       }
       // Opción 2: userInfo.data?.idToken (versión nueva)
-      else if (userInfo.data && userInfo.data.idToken) {
+      else if (userInfo.data && 'idToken' in userInfo.data && userInfo.data.idToken) {
         idToken = userInfo.data.idToken;
         console.log('✅ idToken encontrado en userInfo.data.idToken');
       }
       // Opción 3: userInfo.user?.idToken
-      else if (userInfo.user && userInfo.user.idToken) {
+      else if (userInfo.user && 'idToken' in userInfo.user && userInfo.user.idToken) {
         idToken = userInfo.user.idToken;
         console.log('✅ idToken encontrado en userInfo.user.idToken');
       }
@@ -144,7 +158,13 @@ class AuthService {
 
       if (!idToken) {
         console.error('❌ ERROR: No se pudo extraer idToken');
-        console.error('❌ Estructura de userInfo:', Object.keys(userInfo));
+        console.error('❌ Claves de userInfo:', Object.keys(userInfo));
+        if (userInfo.data) {
+          console.error('❌ Claves de userInfo.data:', Object.keys(userInfo.data));
+        }
+        if (userInfo.user) {
+          console.error('❌ Claves de userInfo.user:', Object.keys(userInfo.user));
+        }
         throw new Error('No se obtuvo ID Token de Google. Verifica la configuración de Firebase.');
       }
 
@@ -210,6 +230,7 @@ class AuthService {
       console.error('❌ Error en Google login:', error);
       console.error('❌ Error code:', error.code);
       console.error('❌ Error message:', error.message);
+      console.error('❌ Error stack:', error.stack);
 
       let errorMessage = 'No se pudo iniciar sesión con Google';
 
@@ -267,7 +288,6 @@ class AuthService {
         twoFactorEnabled: false,
       };
 
-      // Guardar token fake para testing
       const fakeToken = `fake_token_${user.id}`;
       await this.saveToken(fakeToken);
       await this.saveUser(user);
@@ -296,7 +316,6 @@ class AuthService {
     try {
       console.log('🔐 Iniciando sesión tradicional:', email);
 
-      // Usar endpoint de login real
       const response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: {
@@ -314,7 +333,6 @@ class AuthService {
         throw new Error(data.error || 'Credenciales inválidas');
       }
 
-      // Guardar token REAL del backend
       await this.saveToken(data.token);
 
       const user: AuthUser = {
@@ -342,64 +360,38 @@ class AuthService {
     }
   }
 
-  // ============================================
-  // SIGN OUT
-  // ============================================
-
   async signOut(): Promise<void> {
     try {
       console.log('👋 Cerrando sesión...');
-
-      // Cerrar sesión de Firebase
       await auth().signOut();
-
-      // Cerrar sesión de Google
       try {
         await GoogleSignin.revokeAccess();
         await GoogleSignin.signOut();
       } catch (error) {
         console.log('ℹ️ No había sesión de Google activa');
       }
-
-      // Limpiar tokens y datos
       await this.removeToken();
       await this.removeUser();
-
       console.log('✅ Sesión cerrada exitosamente');
-
     } catch (error) {
       console.error('❌ Error en signOut:', error);
-      // Limpiar de todas formas
       await this.removeToken();
       await this.removeUser();
     }
   }
 
-  // ============================================
-  // GET CURRENT USER
-  // ============================================
-
   async getCurrentUser(): Promise<AuthUser | null> {
     try {
-      // Primero intentar obtener del storage local
       const localUser = await this.getUser();
-
       if (localUser) {
         console.log('✅ Usuario encontrado en storage local');
         return localUser;
       }
-
-      // Si no hay usuario local, verificar si hay sesión de Firebase
       const firebaseUser = auth().currentUser;
-
       if (firebaseUser) {
         console.log('✅ Usuario encontrado en Firebase');
-        
-        // Obtener token y sincronizar con backend
         const token = await this.getToken();
-        
         if (token) {
-          // Usuario válido
           return {
             id: firebaseUser.uid,
             email: firebaseUser.email || '',
@@ -411,19 +403,13 @@ class AuthService {
           };
         }
       }
-
       console.log('ℹ️ No hay usuario autenticado');
       return null;
-
     } catch (error) {
       console.error('❌ Error obteniendo usuario actual:', error);
       return null;
     }
   }
-
-  // ============================================
-  // PASSWORD RESET
-  // ============================================
 
   async resetPassword(email: string): Promise<{ success: boolean; error: string | null }> {
     try {
@@ -439,30 +425,18 @@ class AuthService {
     }
   }
 
-  // ============================================
-  // CHECK AUTHENTICATION
-  // ============================================
-
   async isAuthenticated(): Promise<boolean> {
     const token = await this.getToken();
     return !!token;
   }
 
-  // ============================================
-  // UPDATE USER PLAN
-  // ============================================
-
   async updatePlan(plan: 'free' | 'premium' | 'enterprise'): Promise<{ success: boolean; error: string | null }> {
     try {
       const token = await this.getToken();
-
       if (!token) {
         throw new Error('No autenticado');
       }
-
       console.log('📊 Actualizando plan a:', plan);
-      console.log('🔑 Token:', token.substring(0, 20) + '...');
-
       const response = await fetch(`${API_URL}/users/update-plan`, {
         method: 'POST',
         headers: {
@@ -471,26 +445,17 @@ class AuthService {
         },
         body: JSON.stringify({ plan }),
       });
-
       const data = await response.json();
-
-      console.log('📥 Respuesta del servidor:', data);
-
       if (!data.success) {
         throw new Error(data.error || 'Error al actualizar plan');
       }
-
-      // Actualizar usuario local
       const currentUser = await this.getUser();
       if (currentUser) {
         currentUser.plan = plan;
         await this.saveUser(currentUser);
       }
-
       console.log('✅ Plan actualizado a:', plan);
-
       return { success: true, error: null };
-
     } catch (error: any) {
       console.error('❌ Error actualizando plan:', error);
       return {
@@ -500,15 +465,10 @@ class AuthService {
     }
   }
 
-  // ============================================
-  // 2FA (Placeholder)
-  // ============================================
-
   async verify2FA(
     code: string, 
     userId: string
   ): Promise<{ success: boolean; user: AuthUser | null; error: string | null }> {
-    // TODO: Implementar 2FA cuando sea necesario
     return { 
       success: false, 
       user: null, 
