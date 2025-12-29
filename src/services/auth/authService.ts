@@ -8,6 +8,8 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://finia.seguricloud.co
 // Configurar Google Sign In
 GoogleSignin.configure({
   webClientId: '17405051659-ci0icsc5rhv48m2r37eegkb8ngddbsvl.apps.googleusercontent.com',
+  offlineAccess: false,
+  forceCodeForRefreshToken: false,
 });
 
 export interface AuthUser {
@@ -106,34 +108,65 @@ class AuthService {
 
   async signInWithGoogle(): Promise<{ user: AuthUser | null; error: string | null }> {
     try {
-      console.log('🔐 Iniciando login con Google + Firebase...');
+      console.log('🔐 === INICIANDO GOOGLE SIGN-IN ===');
+      console.log('🔐 Paso 1: Verificando Google Play Services...');
 
       // 1. Verificar Google Play Services
-      await GoogleSignin.hasPlayServices();
-      console.log('✅ Google Play Services disponible');
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      console.log('✅ Paso 1: Google Play Services disponible');
 
-      // 2. Obtener Google ID Token
-      const { idToken } = await GoogleSignin.signIn();
-      console.log('✅ Google ID Token obtenido');
+      // 2. Obtener información de Google
+      console.log('🔐 Paso 2: Llamando a GoogleSignin.signIn()...');
+      const userInfo = await GoogleSignin.signIn();
+      console.log('✅ Paso 2: GoogleSignin.signIn() completado');
+      console.log('📋 userInfo completo:', JSON.stringify(userInfo, null, 2));
 
-      if (!idToken) {
-        throw new Error('No se obtuvo ID Token de Google');
+      // Extraer idToken de diferentes ubicaciones posibles
+      let idToken = null;
+      
+      // Opción 1: userInfo.idToken (versión antigua)
+      if (userInfo.idToken) {
+        idToken = userInfo.idToken;
+        console.log('✅ idToken encontrado en userInfo.idToken');
+      }
+      // Opción 2: userInfo.data?.idToken (versión nueva)
+      else if (userInfo.data && userInfo.data.idToken) {
+        idToken = userInfo.data.idToken;
+        console.log('✅ idToken encontrado en userInfo.data.idToken');
+      }
+      // Opción 3: userInfo.user?.idToken
+      else if (userInfo.user && userInfo.user.idToken) {
+        idToken = userInfo.user.idToken;
+        console.log('✅ idToken encontrado en userInfo.user.idToken');
       }
 
+      console.log('🔑 idToken:', idToken ? `${idToken.substring(0, 50)}...` : 'NULL');
+
+      if (!idToken) {
+        console.error('❌ ERROR: No se pudo extraer idToken');
+        console.error('❌ Estructura de userInfo:', Object.keys(userInfo));
+        throw new Error('No se obtuvo ID Token de Google. Verifica la configuración de Firebase.');
+      }
+
+      console.log('✅ ID Token obtenido exitosamente');
+
       // 3. Crear credencial de Firebase
+      console.log('🔐 Paso 3: Creando credencial de Firebase...');
       const googleCredential = auth.GoogleAuthProvider.credential(idToken);
-      console.log('✅ Credencial de Firebase creada');
+      console.log('✅ Paso 3: Credencial de Firebase creada');
 
       // 4. Autenticar con Firebase
+      console.log('🔐 Paso 4: Autenticando con Firebase...');
       const userCredential = await auth().signInWithCredential(googleCredential);
-      console.log('✅ Autenticado con Firebase:', userCredential.user.email);
+      console.log('✅ Paso 4: Autenticado con Firebase:', userCredential.user.email);
 
       // 5. Obtener Firebase ID Token
+      console.log('🔐 Paso 5: Obteniendo Firebase ID Token...');
       const firebaseIdToken = await userCredential.user.getIdToken();
-      console.log('✅ Firebase ID Token obtenido');
+      console.log('✅ Paso 5: Firebase ID Token obtenido');
 
       // 6. Enviar al backend
-      console.log('📤 Enviando al backend:', API_URL);
+      console.log('🔐 Paso 6: Enviando al backend:', API_URL);
       const response = await fetch(`${API_URL}/auth/firebase-login`, {
         method: 'POST',
         headers: {
@@ -145,13 +178,14 @@ class AuthService {
       });
 
       const data: LoginResponse = await response.json();
-      console.log('📥 Respuesta del backend:', data);
+      console.log('📥 Paso 6: Respuesta del backend:', data);
 
       if (!response.ok || !data.success) {
         throw new Error(data.message || 'Error al autenticar con el backend');
       }
 
       // 7. Guardar token y usuario
+      console.log('🔐 Paso 7: Guardando datos...');
       await this.saveToken(data.token);
 
       const user: AuthUser = {
@@ -174,6 +208,8 @@ class AuthService {
 
     } catch (error: any) {
       console.error('❌ Error en Google login:', error);
+      console.error('❌ Error code:', error.code);
+      console.error('❌ Error message:', error.message);
 
       let errorMessage = 'No se pudo iniciar sesión con Google';
 
@@ -182,7 +218,6 @@ class AuthService {
       } else if (error.code === 'auth/network-request-failed') {
         errorMessage = 'Error de red. Verifica tu conexión a internet';
       } else if (error.code === '12501') {
-        // Usuario canceló el inicio de sesión
         console.log('ℹ️ Usuario canceló el login');
         return { user: null, error: null };
       } else if (error.message) {
@@ -251,7 +286,7 @@ class AuthService {
   }
 
   // ============================================
-  // TRADITIONAL SIGNIN (Fallback) - CORREGIDO
+  // TRADITIONAL SIGNIN (Fallback)
   // ============================================
 
   async signIn(
