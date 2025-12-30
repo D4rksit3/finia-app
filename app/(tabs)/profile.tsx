@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Image } fr
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useUserStore } from '@/store/userStore';
 import { router } from 'expo-router';
+import authService from '../../src/services/auth/authService';
 
 export default function ProfileScreen() {
   const { user, logout } = useUserStore();
@@ -17,24 +18,38 @@ export default function ProfileScreen() {
     );
   }
 
-  const handleLogout = () => {
-    Alert.alert(
-      'Cerrar Sesión',
-      '¿Estás seguro de que deseas cerrar sesión?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Cerrar Sesión',
-          style: 'destructive',
-          onPress: () => {
+  const handleLogout = async () => {
+  Alert.alert(
+    'Cerrar Sesión',
+    '¿Estás seguro de que deseas cerrar sesión?',
+    [
+      { 
+        text: 'Cancelar', 
+        style: 'cancel' 
+      },
+      {
+        text: 'Cerrar Sesión',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            console.log('👋 Cerrando sesión...');
+            
+            await authService.signOut();
             logout();
             router.replace('/(auth)/login');
-          },
+            
+            console.log('✅ Sesión cerrada completamente');
+            
+          } catch (error) {
+            console.error('Error logout:', error);
+            logout();
+            router.replace('/(auth)/login');
+          }
         },
-      ]
-    );
-  };
-
+      },
+    ]
+  );
+};
   const planColor = user.plan === 'free' ? '#6B7280' : user.plan === 'premium' ? '#00D4AA' : '#6C5CE7';
   const planName = user.plan === 'free' ? 'FREE' : user.plan === 'premium' ? 'PREMIUM' : 'ENTERPRISE';
 

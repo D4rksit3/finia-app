@@ -1,7 +1,6 @@
-import { Alert, Linking, Platform } from 'react-native';
+import { Alert, Linking, Platform, PermissionsAndroid } from 'react-native';
 import { Camera } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import Voice from '@react-native-voice/voice';
 
 class PermissionsService {
   
@@ -10,9 +9,15 @@ class PermissionsService {
   // ============================================
   
   async checkMicrophonePermission(): Promise<boolean> {
+    if (Platform.OS !== 'android') {
+      return true; // iOS maneja permisos automáticamente
+    }
+
     try {
-      const available = await Voice.isAvailable();
-      return available === 1;
+      const granted = await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO
+      );
+      return granted;
     } catch (error) {
       console.error('Error verificando permiso de micrófono:', error);
       return false;
@@ -20,8 +25,20 @@ class PermissionsService {
   }
 
   async checkCameraPermission(): Promise<boolean> {
-    const { status } = await Camera.getCameraPermissionsAsync();
-    return status === 'granted';
+    if (Platform.OS !== 'android') {
+      const { status } = await Camera.getCameraPermissionsAsync();
+      return status === 'granted';
+    }
+
+    try {
+      const granted = await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.CAMERA
+      );
+      return granted;
+    } catch (error) {
+      console.error('Error verificando permiso de cámara:', error);
+      return false;
+    }
   }
 
   async checkGalleryPermission(): Promise<boolean> {
@@ -34,27 +51,53 @@ class PermissionsService {
   // ============================================
 
   async requestMicrophonePermission(): Promise<boolean> {
+    if (Platform.OS !== 'android') {
+      return true; // iOS maneja permisos automáticamente con Voice
+    }
+
     try {
       console.log('🎤 Solicitando permiso de micrófono...');
       
-      // Para Voice, el permiso se solicita automáticamente al usarlo
-      // Pero podemos verificar si está disponible
-      const available = await Voice.isAvailable();
-      
-      if (available !== 1) {
+      // Verificar si ya tiene permiso
+      const hasPermission = await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO
+      );
+
+      if (hasPermission) {
+        console.log('✅ Ya tiene permiso de micrófono');
+        return true;
+      }
+
+      // Solicitar permiso
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        {
+          title: 'Permiso de Micrófono',
+          message: 'FINIA necesita acceso al micrófono para el reconocimiento de voz en transacciones.',
+          buttonNeutral: 'Preguntar después',
+          buttonNegative: 'Cancelar',
+          buttonPositive: 'Permitir',
+        }
+      );
+
+      if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+        console.log('✅ Permiso de micrófono concedido');
+        return true;
+      } else if (granted === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
+        // Usuario marcó "No volver a preguntar"
         Alert.alert(
-          'Permiso de Micrófono Requerido',
-          'FINIA necesita acceso al micrófono para el reconocimiento de voz en transacciones.',
+          'Permiso Requerido',
+          'Por favor, habilita el permiso de micrófono en la configuración de la aplicación.',
           [
             { text: 'Cancelar', style: 'cancel' },
-            { text: 'Ir a Configuración', onPress: () => Linking.openSettings() }
+            { text: 'Abrir Configuración', onPress: () => Linking.openSettings() }
           ]
         );
         return false;
+      } else {
+        console.log('❌ Permiso de micrófono denegado');
+        return false;
       }
-
-      console.log('✅ Permiso de micrófono concedido');
-      return true;
 
     } catch (error) {
       console.error('❌ Error solicitando permiso de micrófono:', error);
@@ -66,6 +109,7 @@ class PermissionsService {
     try {
       console.log('📷 Solicitando permiso de cámara...');
       
+      // Usar expo-camera para manejar permisos
       const { status: currentStatus } = await Camera.getCameraPermissionsAsync();
       
       if (currentStatus === 'granted') {
@@ -81,7 +125,7 @@ class PermissionsService {
           'FINIA necesita acceso a la cámara para escanear recibos y capturar comprobantes.',
           [
             { text: 'Cancelar', style: 'cancel' },
-            { text: 'Ir a Configuración', onPress: () => Linking.openSettings() }
+            { text: 'Abrir Configuración', onPress: () => Linking.openSettings() }
           ]
         );
         return false;
@@ -115,7 +159,7 @@ class PermissionsService {
           'FINIA necesita acceso a tu galería para seleccionar imágenes de recibos.',
           [
             { text: 'Cancelar', style: 'cancel' },
-            { text: 'Ir a Configuración', onPress: () => Linking.openSettings() }
+            { text: 'Abrir Configuración', onPress: () => Linking.openSettings() }
           ]
         );
         return false;
@@ -175,27 +219,37 @@ class PermissionsService {
     type: 'microphone' | 'camera' | 'gallery',
     explanation: string
   ): Promise<boolean> {
-    Alert.alert(
-      'Permiso Requerido',
-      explanation,
-      [
-        { text: 'Ahora No', style: 'cancel' },
-        { 
-          text: 'Permitir',
-          onPress: async () => {
-            switch (type) {
-              case 'microphone':
-                return await this.requestMicrophonePermission();
-              case 'camera':
-                return await this.requestCameraPermission();
-              case 'gallery':
-                return await this.requestGalleryPermission();
+    return new Promise((resolve) => {
+      Alert.alert(
+        'Permiso Requerido',
+        explanation,
+        [
+          { 
+            text: 'Ahora No', 
+            style: 'cancel',
+            onPress: () => resolve(false)
+          },
+          { 
+            text: 'Permitir',
+            onPress: async () => {
+              let result = false;
+              switch (type) {
+                case 'microphone':
+                  result = await this.requestMicrophonePermission();
+                  break;
+                case 'camera':
+                  result = await this.requestCameraPermission();
+                  break;
+                case 'gallery':
+                  result = await this.requestGalleryPermission();
+                  break;
+              }
+              resolve(result);
             }
           }
-        }
-      ]
-    );
-    return false;
+        ]
+      );
+    });
   }
 }
 

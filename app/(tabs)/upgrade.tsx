@@ -112,27 +112,22 @@ export default function UpgradeScreen() {
     );
   };
 
-  const processPlanChange = async (plan: Plan) => {
-    setLoading(plan.id);
+const processPlanChange = async (plan: Plan) => {
+  setLoading(plan.id);
 
-    try {
-      // Simular procesamiento de pago
-      await new Promise(resolve => setTimeout(resolve, 2000));
+  try {
+    console.log('📊 [Upgrade] Procesando cambio a:', plan.id);
+    
+    await new Promise(resolve => setTimeout(resolve, 1500));
 
-      // Actualizar en el backend
-      const response = await axios.post(`${API_URL}/users/update-plan`, {
-        userId: user?.id,
-        plan: plan.id,
-      });
+    const success = await updatePlan(plan.id);
 
-      // Actualizar en el store local
-      updatePlan(plan.id);
+    setLoading(null);
 
-      setLoading(null);
-
+    if (success) {
       Alert.alert(
         '¡Éxito! 🎉',
-        `Has cambiado al plan ${plan.name}. Ahora tienes acceso a todas las funciones ${plan.id === 'free' ? 'básicas' : 'premium'}.`,
+        `Has cambiado al plan ${plan.name}.`,
         [
           {
             text: 'Ver Dashboard',
@@ -140,12 +135,21 @@ export default function UpgradeScreen() {
           },
         ]
       );
-    } catch (error: any) {
-      console.error('Error updating plan:', error);
-      setLoading(null);
-      Alert.alert('Error', 'No se pudo actualizar el plan. Intenta nuevamente.');
+    } else {
+      Alert.alert(
+        'Error',
+        'No se pudo actualizar el plan. Verifica tu conexión.'
+      );
     }
-  };
+  } catch (error: any) {
+    console.error('❌ [Upgrade] Error:', error);
+    setLoading(null);
+    Alert.alert('Error', 'Ocurrió un error inesperado.');
+  }
+};
+
+
+
 
   return (
     <SafeAreaView style={styles.container}>

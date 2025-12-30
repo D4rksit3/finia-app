@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Linking } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUserStore } from '@/store/userStore';
 import { useTransactionStore } from '@/store/transactionStore';
 import { router } from 'expo-router';
 import axios from 'axios';
 import Voice from '@react-native-voice/voice';
-//import permissionsService from '@/src/services/permissions/permissionsService';
-
+import PermissionsService from '../../src/services/permissions/permissionsService';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://finia.seguricloud.com/api';
 
@@ -32,193 +31,253 @@ export default function AddScreen() {
   const [recognizedText, setRecognizedText] = useState('');
 
   useEffect(() => {
-    // Configurar @react-native-voice/voice para React Native
-    Voice.onSpeechStart = () => {
-      console.log('🎤 Voice recognition started');
-      setIsListening(true);
-    };
+    console.log('📱 AddScreen montado');
+    
+    try {
+      // Configurar Voice listeners
+      Voice.onSpeechStart = () => {
+        console.log('🎤 Voice recognition started');
+        setIsListening(true);
+      };
 
-    Voice.onSpeechResults = (event: any) => {
-      if (event.value && event.value.length > 0) {
-        const text = event.value[0];
-        console.log('🎤 Recognized:', text);
-        setRecognizedText(text);
-        parseVoiceInput(text);
-      }
-    };
+      Voice.onSpeechResults = (event: any) => {
+        console.log('🎤 onSpeechResults:', event);
+        if (event.value && event.value.length > 0) {
+          const text = event.value[0];
+          console.log('🎤 Recognized:', text);
+          setRecognizedText(text);
+          parseVoiceInput(text);
+        }
+      };
 
-    Voice.onSpeechError = (event: any) => {
-      console.error('🎤 Error:', event.error);
-      setIsListening(false);
-      
-      // Error 7 = no speech detected (no mostrar alerta)
-      if (event.error?.code !== '7' && event.error?.code !== 7) {
-        Alert.alert('Error', 'No se pudo reconocer la voz. Intenta de nuevo.');
-      }
-    };
+      Voice.onSpeechError = (event: any) => {
+        console.error('🎤 Error:', event);
+        setIsListening(false);
+        
+        // Error 7 = no speech detected (no mostrar alerta)
+        if (event.error?.code !== '7' && event.error?.code !== 7) {
+          Alert.alert('Error de voz', 'No se pudo reconocer. Intenta de nuevo.');
+        }
+      };
 
-    Voice.onSpeechEnd = () => {
-      console.log('🎤 Voice recognition ended');
-      setIsListening(false);
-    };
+      Voice.onSpeechEnd = () => {
+        console.log('🎤 Voice recognition ended');
+        setIsListening(false);
+      };
+    } catch (error) {
+      console.error('❌ Error configurando Voice:', error);
+    }
 
-    // Cleanup al desmontar el componente
+    // Cleanup
     return () => {
-      Voice.destroy().then(Voice.removeAllListeners);
+      console.log('📱 AddScreen desmontado');
+      Voice.destroy().then(Voice.removeAllListeners).catch(err => {
+        console.error('Error cleanup Voice:', err);
+      });
     };
   }, []);
 
-  
-const startListening = async () => {
-  try {
-    setRecognizedText('');
-    await Voice.start('es-PE');
-    console.log('✅ Voice started');
-  } catch (error: any) {
-    console.error('❌ Error starting voice:', error);
-    Alert.alert(
-      'Error',
-      'No se pudo iniciar el reconocimiento de voz. Verifica los permisos de micrófono en la configuración del teléfono.',
-      [{ text: 'OK' }]
-    );
-    setIsListening(false);
-  }
-};
+  const startListening = async () => {
+    try {
+      console.log('🎤 [startListening] Iniciando...');
+      
+      // 1. Solicitar permiso
+      console.log('🎤 [startListening] Solicitando permiso...');
+      const hasPermission = await PermissionsService.requestMicrophonePermission();
+      
+      if (!hasPermission) {
+        console.log('❌ [startListening] Permiso denegado');
+        Alert.alert(
+          'Permiso Requerido',
+          'FINIA necesita acceso al micrófono para el reconocimiento de voz.',
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Abrir Configuración', onPress: () => Linking.openSettings() }
+          ]
+        );
+        return;
+      }
+      
+      console.log('✅ [startListening] Permiso concedido');
+      
+      // 2. Verificar que Voice esté disponible
+      const available = await Voice.isAvailable();
+      console.log('🎤 [startListening] Voice available:', available);
+      
+      if (!available) {
+        Alert.alert('Error', 'El reconocimiento de voz no está disponible en este dispositivo.');
+        return;
+      }
+      
+      // 3. Iniciar reconocimiento
+      console.log('🎤 [startListening] Iniciando Voice.start...');
+      setIsListening(true);
+      await Voice.start('es-PE');
+      console.log('✅ [startListening] Voice started');
+      
+    } catch (error: any) {
+      console.error('❌ [startListening] Error:', error);
+      setIsListening(false);
+      
+      Alert.alert(
+        'Error',
+        `No se pudo iniciar el reconocimiento de voz: ${error.message || 'Error desconocido'}`
+      );
+    }
+  };
 
   const stopListening = async () => {
     try {
+      console.log('🛑 [stopListening] Deteniendo...');
       await Voice.stop();
-      console.log('✅ Voice stopped');
+      setIsListening(false);
+      console.log('✅ [stopListening] Voice stopped');
     } catch (error: any) {
-      console.error('❌ Error stopping voice:', error);
+      console.error('❌ [stopListening] Error:', error);
+      setIsListening(false);
     }
   };
 
   const parseVoiceInput = (text: string) => {
-    const lowerText = text.toLowerCase();
-    
-    // Detectar tipo (ingreso o gasto)
-    let detectedType: TransactionType = 'expense';
-    if (lowerText.includes('ingreso') || lowerText.includes('ganancia') || lowerText.includes('cobré') || lowerText.includes('recibí')) {
-      detectedType = 'income';
-      setType('income');
-    } else if (lowerText.includes('gasto') || lowerText.includes('gasté') || lowerText.includes('pagué') || lowerText.includes('compré')) {
-      detectedType = 'expense';
-      setType('expense');
-    }
-
-    // Detectar monto
-    const montoPatterns = [
-      /(\d+\.?\d*)\s*(soles?|nuevos soles)/i,
-      /(\d+\.?\d*)\s*s\/?\.?/i,
-      /(\d+)\s*(con\s*(\d+))?/i,
-    ];
-
-    let detectedAmount = '';
-    for (const pattern of montoPatterns) {
-      const match = lowerText.match(pattern);
-      if (match) {
-        if (match[3]) {
-          detectedAmount = `${match[1]}.${match[3]}`;
-        } else {
-          detectedAmount = match[1];
-        }
-        setAmount(detectedAmount);
-        break;
+    try {
+      console.log('🔍 [parseVoiceInput] Parseando:', text);
+      const lowerText = text.toLowerCase();
+      
+      // Detectar tipo
+      let detectedType: TransactionType = 'expense';
+      if (lowerText.includes('ingreso') || lowerText.includes('ganancia') || lowerText.includes('cobré') || lowerText.includes('recibí')) {
+        detectedType = 'income';
+        setType('income');
+      } else if (lowerText.includes('gasto') || lowerText.includes('gasté') || lowerText.includes('pagué') || lowerText.includes('compré')) {
+        detectedType = 'expense';
+        setType('expense');
       }
-    }
 
-    // Detectar categoría
-    const categoryKeywords = {
-      'Comida': ['comida', 'almuerzo', 'cena', 'desayuno', 'restaurant', 'comí', 'pizza', 'pollo', 'ceviche'],
-      'Transporte': ['transporte', 'taxi', 'uber', 'gasolina', 'pasaje', 'bus', 'combi'],
-      'Hogar': ['casa', 'hogar', 'alquiler', 'luz', 'agua', 'internet'],
-      'Salud': ['salud', 'farmacia', 'medicina', 'doctor', 'médico', 'clínica'],
-      'Entretenimiento': ['cine', 'diversión', 'juego', 'netflix', 'spotify'],
-      'Educación': ['educación', 'curso', 'libro', 'universidad', 'colegio'],
-      'Salario': ['salario', 'sueldo', 'pago', 'cobré'],
-      'Freelance': ['freelance', 'trabajo', 'proyecto'],
-      'Ventas': ['venta', 'vendí'],
-    };
+      // Detectar monto
+      const montoPatterns = [
+        /(\d+\.?\d*)\s*(soles?|nuevos soles)/i,
+        /(\d+\.?\d*)\s*s\/?\.?/i,
+        /(\d+)\s*(con\s*(\d+))?/i,
+      ];
 
-    let detectedCategory = detectedType === 'expense' ? 'Comida' : 'Salario';
-    for (const [cat, keywords] of Object.entries(categoryKeywords)) {
-      for (const keyword of keywords) {
-        if (lowerText.includes(keyword)) {
-          if (detectedType === 'expense' && categories.expense.includes(cat)) {
-            detectedCategory = cat;
-            break;
-          } else if (detectedType === 'income' && categories.income.includes(cat)) {
-            detectedCategory = cat;
-            break;
+      let detectedAmount = '';
+      for (const pattern of montoPatterns) {
+        const match = lowerText.match(pattern);
+        if (match) {
+          if (match[3]) {
+            detectedAmount = `${match[1]}.${match[3]}`;
+          } else {
+            detectedAmount = match[1];
           }
+          setAmount(detectedAmount);
+          break;
         }
       }
-    }
-    setCategory(detectedCategory);
 
-    // Extraer descripción
-    let desc = text
-      .replace(/\d+\.?\d*/g, '')
-      .replace(/soles?|nuevos soles|s\/\.?/gi, '')
-      .replace(/gasté|pagué|compré|ingreso|ganancia|cobré|recibí/gi, '')
-      .replace(/en|de|para|por/gi, '')
-      .trim();
-    
-    if (desc.length > 3) {
-      setDescription(desc);
-    }
+      // Detectar categoría
+      const categoryKeywords = {
+        'Comida': ['comida', 'almuerzo', 'cena', 'desayuno', 'restaurant', 'comí', 'pizza', 'pollo', 'ceviche'],
+        'Transporte': ['transporte', 'taxi', 'uber', 'gasolina', 'pasaje', 'bus', 'combi'],
+        'Hogar': ['casa', 'hogar', 'alquiler', 'luz', 'agua', 'internet'],
+        'Salud': ['salud', 'farmacia', 'medicina', 'doctor', 'médico', 'clínica'],
+        'Entretenimiento': ['cine', 'diversión', 'juego', 'netflix', 'spotify'],
+        'Educación': ['educación', 'curso', 'libro', 'universidad', 'colegio'],
+        'Salario': ['salario', 'sueldo', 'pago', 'cobré'],
+        'Freelance': ['freelance', 'trabajo', 'proyecto'],
+        'Ventas': ['venta', 'vendí'],
+      };
 
-    // Mostrar resumen
-    Alert.alert(
-      '🎤 Reconocido',
-      `Tipo: ${detectedType === 'income' ? 'Ingreso' : 'Gasto'}\nMonto: S/ ${detectedAmount || '0'}\nCategoría: ${detectedCategory}\nDescripción: ${desc || 'Sin descripción'}`,
-      [
-        { text: 'Editar', style: 'cancel' },
-        { 
-          text: 'Confirmar', 
-          onPress: () => {
-            if (detectedAmount) {
-              handleSubmit();
+      let detectedCategory = detectedType === 'expense' ? 'Comida' : 'Salario';
+      for (const [cat, keywords] of Object.entries(categoryKeywords)) {
+        for (const keyword of keywords) {
+          if (lowerText.includes(keyword)) {
+            if (detectedType === 'expense' && categories.expense.includes(cat)) {
+              detectedCategory = cat;
+              break;
+            } else if (detectedType === 'income' && categories.income.includes(cat)) {
+              detectedCategory = cat;
+              break;
             }
           }
-        },
-      ]
-    );
+        }
+      }
+      setCategory(detectedCategory);
+
+      // Extraer descripción
+      let desc = text
+        .replace(/\d+\.?\d*/g, '')
+        .replace(/soles?|nuevos soles|s\/\.?/gi, '')
+        .replace(/gasté|pagué|compré|ingreso|ganancia|cobré|recibí/gi, '')
+        .replace(/en|de|para|por/gi, '')
+        .trim();
+      
+      if (desc.length > 3) {
+        setDescription(desc);
+      }
+
+      console.log('✅ [parseVoiceInput] Parseado:', { detectedType, detectedAmount, detectedCategory, desc });
+
+      // Mostrar resumen
+      Alert.alert(
+        '🎤 Reconocido',
+        `Tipo: ${detectedType === 'income' ? 'Ingreso' : 'Gasto'}\nMonto: S/ ${detectedAmount || '0'}\nCategoría: ${detectedCategory}\nDescripción: ${desc || 'Sin descripción'}`,
+        [
+          { text: 'Editar', style: 'cancel' },
+          { 
+            text: 'Confirmar', 
+            onPress: () => {
+              if (detectedAmount) {
+                handleSubmit();
+              } else {
+                Alert.alert('Error', 'No se detectó un monto válido');
+              }
+            }
+          },
+        ]
+      );
+    } catch (error) {
+      console.error('❌ [parseVoiceInput] Error:', error);
+      Alert.alert('Error', 'No se pudo procesar el texto reconocido');
+    }
   };
 
   const handleTypeChange = (newType: TransactionType) => {
+    console.log('🔄 Cambiando tipo a:', newType);
     setType(newType);
     setCategory(newType === 'expense' ? 'Comida' : 'Salario');
   };
 
   const handleSubmit = async () => {
-    if (!amount || !category || !description) {
-      Alert.alert('Error', 'Por favor completa todos los campos');
-      return;
-    }
-
-    const numAmount = parseFloat(amount);
-    if (isNaN(numAmount) || numAmount <= 0) {
-      Alert.alert('Error', 'Ingresa un monto válido');
-      return;
-    }
-
-    if (!canAddTransaction()) {
-      Alert.alert(
-        'Límite Alcanzado',
-        'Has alcanzado el límite de 50 transacciones mensuales del plan FREE. Actualiza a Premium para transacciones ilimitadas.',
-        [
-          { text: 'Cancelar', style: 'cancel' },
-          { text: 'Ver Planes', onPress: () => router.push('/(tabs)/upgrade') },
-        ]
-      );
-      return;
-    }
-
-    setLoading(true);
-
     try {
+      console.log('💾 [handleSubmit] Iniciando...');
+      
+      // Validaciones
+      if (!amount || !category || !description) {
+        Alert.alert('Error', 'Por favor completa todos los campos');
+        return;
+      }
+
+      const numAmount = parseFloat(amount);
+      if (isNaN(numAmount) || numAmount <= 0) {
+        Alert.alert('Error', 'Ingresa un monto válido');
+        return;
+      }
+
+      if (!canAddTransaction()) {
+        Alert.alert(
+          'Límite Alcanzado',
+          'Has alcanzado el límite de 50 transacciones mensuales. Actualiza a Premium.',
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Ver Planes', onPress: () => router.push('/(tabs)/upgrade') },
+          ]
+        );
+        return;
+      }
+
+      setLoading(true);
+      console.log('💾 [handleSubmit] Enviando al backend...');
+
       const today = new Date();
       const dateString = today.toISOString().split('T')[0];
 
@@ -230,6 +289,8 @@ const startListening = async () => {
         description,
         transactionDate: dateString,
       });
+
+      console.log('✅ [handleSubmit] Respuesta backend:', response.data);
 
       addTransaction({
         id: response.data.transaction.id.toString(),
@@ -248,17 +309,20 @@ const startListening = async () => {
         await syncWithBackend(user.id);
       }
 
+      console.log('✅ [handleSubmit] Transacción agregada');
+
       Alert.alert('¡Listo! ✅', 'Transacción agregada exitosamente', [
         { text: 'Agregar otra', onPress: () => resetForm() },
         { text: 'Ver Dashboard', onPress: () => router.push('/(tabs)/home') },
       ]);
+      
     } catch (error: any) {
-      console.error('Error creating transaction:', error);
+      console.error('❌ [handleSubmit] Error:', error);
       
       if (error.response?.status === 403) {
         Alert.alert('Límite Alcanzado', error.response.data.message);
       } else {
-        Alert.alert('Error', 'No se pudo crear la transacción. Intenta nuevamente.');
+        Alert.alert('Error', `No se pudo crear la transacción: ${error.message || 'Error desconocido'}`);
       }
     } finally {
       setLoading(false);
@@ -266,10 +330,40 @@ const startListening = async () => {
   };
 
   const resetForm = () => {
+    console.log('🔄 Reseteando formulario');
     setAmount('');
     setDescription('');
     setCategory(type === 'expense' ? 'Comida' : 'Salario');
     setRecognizedText('');
+  };
+
+  const openScanner = async () => {
+    try {
+      console.log('📷 [openScanner] Iniciando...');
+      
+      // Solicitar permiso de cámara
+      const hasPermission = await PermissionsService.requestCameraPermission();
+      
+      if (!hasPermission) {
+        console.log('❌ [openScanner] Permiso de cámara denegado');
+        Alert.alert(
+          'Permiso Requerido',
+          'FINIA necesita acceso a la cámara para escanear recibos.',
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Abrir Configuración', onPress: () => Linking.openSettings() }
+          ]
+        );
+        return;
+      }
+      
+      console.log('✅ [openScanner] Permiso concedido, abriendo escáner...');
+      router.push('/(tabs)/ocr');
+      
+    } catch (error) {
+      console.error('❌ [openScanner] Error:', error);
+      Alert.alert('Error', 'No se pudo abrir el escáner');
+    }
   };
 
   return (
@@ -286,16 +380,26 @@ const startListening = async () => {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.content}>
+            {/* Header */}
             <View style={styles.headerRow}>
               <Text style={styles.title}>Agregar Transacción</Text>
-              <TouchableOpacity 
-                style={[styles.voiceButton, isListening && styles.voiceButtonActive]} 
-                onPress={isListening ? stopListening : startListening}
-              >
-                <Text style={styles.voiceIcon}>{isListening ? '⏸️' : '🎤'}</Text>
-              </TouchableOpacity>
+              <View style={styles.headerButtons}>
+                <TouchableOpacity 
+                  style={[styles.iconButton, styles.scannerButton]} 
+                  onPress={openScanner}
+                >
+                  <Text style={styles.iconButtonText}>📷</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.iconButton, isListening && styles.voiceButtonActive]} 
+                  onPress={isListening ? stopListening : startListening}
+                >
+                  <Text style={styles.iconButtonText}>{isListening ? '⏸️' : '🎤'}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
+            {/* Listening indicator */}
             {isListening && (
               <View style={styles.listeningCard}>
                 <Text style={styles.listeningIcon}>🎙️</Text>
@@ -308,6 +412,7 @@ const startListening = async () => {
               </View>
             )}
 
+            {/* Recognized text */}
             {recognizedText !== '' && !isListening && (
               <View style={styles.recognizedCard}>
                 <Text style={styles.recognizedIcon}>💬</Text>
@@ -318,6 +423,7 @@ const startListening = async () => {
               </View>
             )}
 
+            {/* Type selector */}
             <View style={styles.typeSelector}>
               <TouchableOpacity
                 style={[styles.typeButton, type === 'expense' && styles.typeButtonActive]}
@@ -335,6 +441,7 @@ const startListening = async () => {
               </TouchableOpacity>
             </View>
 
+            {/* Amount */}
             <View style={styles.field}>
               <Text style={styles.label}>Monto</Text>
               <View style={styles.amountContainer}>
@@ -351,6 +458,7 @@ const startListening = async () => {
               </View>
             </View>
 
+            {/* Category */}
             <View style={styles.field}>
               <Text style={styles.label}>Categoría</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categories}>
@@ -368,6 +476,7 @@ const startListening = async () => {
               </ScrollView>
             </View>
 
+            {/* Description */}
             <View style={styles.field}>
               <Text style={styles.label}>Descripción</Text>
               <TextInput
@@ -383,6 +492,7 @@ const startListening = async () => {
               <Text style={styles.hint}>{description.length}/100</Text>
             </View>
 
+            {/* Submit button */}
             <TouchableOpacity
               style={[styles.submitButton, loading && styles.submitButtonDisabled]}
               onPress={handleSubmit}
@@ -395,6 +505,7 @@ const startListening = async () => {
               )}
             </TouchableOpacity>
 
+            {/* Free plan warning */}
             {!user?.isPremium && (
               <View style={styles.warningCard}>
                 <Text style={styles.warningIcon}>⚠️</Text>
@@ -404,6 +515,7 @@ const startListening = async () => {
               </View>
             )}
 
+            {/* Voice examples */}
             <View style={styles.voiceExamplesCard}>
               <Text style={styles.voiceExamplesTitle}>💡 Ejemplos de comandos de voz:</Text>
               <Text style={styles.voiceExample}>• "Gasté 50 soles en almuerzo"</Text>
@@ -428,9 +540,11 @@ const styles = StyleSheet.create({
   content: { padding: 20 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
   title: { fontSize: 28, fontWeight: 'bold', color: '#FFFFFF' },
-  voiceButton: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#151B3D', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#00D4AA' },
+  headerButtons: { flexDirection: 'row', gap: 8 },
+  iconButton: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#151B3D', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#00D4AA' },
+  scannerButton: { borderColor: '#6C5CE7' },
   voiceButtonActive: { backgroundColor: '#00D4AA' },
-  voiceIcon: { fontSize: 24 },
+  iconButtonText: { fontSize: 24 },
   listeningCard: { flexDirection: 'row', backgroundColor: '#1E2749', borderRadius: 12, padding: 16, marginBottom: 16, borderWidth: 2, borderColor: '#00D4AA' },
   listeningIcon: { fontSize: 32, marginRight: 12 },
   listeningContent: { flex: 1 },
