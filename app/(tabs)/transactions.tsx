@@ -6,7 +6,7 @@ import { useTransactionStore } from '@/store/transactionStore';
 import { formatCurrency, formatDate } from '@/utils/formatters';
 import axios from 'axios';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.40.246:3000/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://finia.seguricloud.com/api';
 
 type FilterType = 'all' | 'income' | 'expense';
 

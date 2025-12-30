@@ -163,15 +163,6 @@ dependencies {
     if (isGifEnabled) {
         // For animated gif support
         implementation("com.facebook.fresco:animated-gif:${expoLibs.versions.fresco.get()}")
-
-    // Fix AndroidX
-    configurations.all {
-        exclude group: 'com.android.support'
-        resolutionStrategy {
-            force 'androidx.core:core:1.13.1'
-            force 'androidx.appcompat:appcompat:1.6.1'
-        }
-    }
     }
 
     if (isWebpEnabled) {
@@ -191,3 +182,12 @@ dependencies {
 }
 
 apply plugin: 'com.google.gms.google-services'
+    // Fix AndroidX
+    configurations.all {
+        exclude group: 'com.android.support'
+        resolutionStrategy {
+            force 'androidx.core:core:1.13.1'
+            force 'androidx.appcompat:appcompat:1.6.1'
+        }
+    }
+}

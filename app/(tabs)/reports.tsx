@@ -10,7 +10,7 @@ import * as Sharing from 'expo-sharing';
 import axios from 'axios';
 import { LineChart, BarChart, PieChart, ProgressChart } from 'react-native-chart-kit';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.40.246:3000/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://finia.seguricloud.com/api';
 const screenWidth = Dimensions.get('window').width;
 
 export default function ReportsScreen() {

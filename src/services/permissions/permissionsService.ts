@@ -5,12 +5,12 @@ import * as ImagePicker from 'expo-image-picker';
 class PermissionsService {
   
   // ============================================
-  // VERIFICAR SI TENEMOS PERMISOS
+  // VERIFICAR PERMISOS
   // ============================================
   
   async checkMicrophonePermission(): Promise<boolean> {
     if (Platform.OS !== 'android') {
-      return true; // iOS maneja permisos automáticamente
+      return true;
     }
 
     try {
@@ -25,16 +25,9 @@ class PermissionsService {
   }
 
   async checkCameraPermission(): Promise<boolean> {
-    if (Platform.OS !== 'android') {
+    try {
       const { status } = await Camera.getCameraPermissionsAsync();
       return status === 'granted';
-    }
-
-    try {
-      const granted = await PermissionsAndroid.check(
-        PermissionsAndroid.PERMISSIONS.CAMERA
-      );
-      return granted;
     } catch (error) {
       console.error('Error verificando permiso de cámara:', error);
       return false;
@@ -42,8 +35,13 @@ class PermissionsService {
   }
 
   async checkGalleryPermission(): Promise<boolean> {
-    const { status } = await ImagePicker.getMediaLibraryPermissionsAsync();
-    return status === 'granted';
+    try {
+      const { status } = await ImagePicker.getMediaLibraryPermissionsAsync();
+      return status === 'granted';
+    } catch (error) {
+      console.error('Error verificando permiso de galería:', error);
+      return false;
+    }
   }
 
   // ============================================
@@ -52,13 +50,12 @@ class PermissionsService {
 
   async requestMicrophonePermission(): Promise<boolean> {
     if (Platform.OS !== 'android') {
-      return true; // iOS maneja permisos automáticamente con Voice
+      return true;
     }
 
     try {
       console.log('🎤 Solicitando permiso de micrófono...');
       
-      // Verificar si ya tiene permiso
       const hasPermission = await PermissionsAndroid.check(
         PermissionsAndroid.PERMISSIONS.RECORD_AUDIO
       );
@@ -68,12 +65,11 @@ class PermissionsService {
         return true;
       }
 
-      // Solicitar permiso
       const granted = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
         {
           title: 'Permiso de Micrófono',
-          message: 'FINIA necesita acceso al micrófono para el reconocimiento de voz en transacciones.',
+          message: 'FINIA necesita acceso al micrófono para el reconocimiento de voz.',
           buttonNeutral: 'Preguntar después',
           buttonNegative: 'Cancelar',
           buttonPositive: 'Permitir',
@@ -84,20 +80,19 @@ class PermissionsService {
         console.log('✅ Permiso de micrófono concedido');
         return true;
       } else if (granted === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) {
-        // Usuario marcó "No volver a preguntar"
         Alert.alert(
           'Permiso Requerido',
-          'Por favor, habilita el permiso de micrófono en la configuración de la aplicación.',
+          'Habilita el permiso de micrófono en la configuración.',
           [
             { text: 'Cancelar', style: 'cancel' },
             { text: 'Abrir Configuración', onPress: () => Linking.openSettings() }
           ]
         );
         return false;
-      } else {
-        console.log('❌ Permiso de micrófono denegado');
-        return false;
       }
+      
+      console.log('❌ Permiso denegado');
+      return false;
 
     } catch (error) {
       console.error('❌ Error solicitando permiso de micrófono:', error);
@@ -109,7 +104,6 @@ class PermissionsService {
     try {
       console.log('📷 Solicitando permiso de cámara...');
       
-      // Usar expo-camera para manejar permisos
       const { status: currentStatus } = await Camera.getCameraPermissionsAsync();
       
       if (currentStatus === 'granted') {
@@ -122,7 +116,7 @@ class PermissionsService {
       if (status !== 'granted') {
         Alert.alert(
           'Permiso de Cámara Requerido',
-          'FINIA necesita acceso a la cámara para escanear recibos y capturar comprobantes.',
+          'FINIA necesita acceso a la cámara para escanear recibos.',
           [
             { text: 'Cancelar', style: 'cancel' },
             { text: 'Abrir Configuración', onPress: () => Linking.openSettings() }
@@ -156,7 +150,7 @@ class PermissionsService {
       if (status !== 'granted') {
         Alert.alert(
           'Permiso de Galería Requerido',
-          'FINIA necesita acceso a tu galería para seleccionar imágenes de recibos.',
+          'FINIA necesita acceso a tu galería para seleccionar imágenes.',
           [
             { text: 'Cancelar', style: 'cancel' },
             { text: 'Abrir Configuración', onPress: () => Linking.openSettings() }
@@ -173,10 +167,6 @@ class PermissionsService {
       return false;
     }
   }
-
-  // ============================================
-  // SOLICITAR TODOS LOS PERMISOS NECESARIOS
-  // ============================================
 
   async requestAllPermissions(): Promise<{
     microphone: boolean;
@@ -195,10 +185,6 @@ class PermissionsService {
     return results;
   }
 
-  // ============================================
-  // VERIFICAR TODOS LOS PERMISOS
-  // ============================================
-
   async checkAllPermissions(): Promise<{
     microphone: boolean;
     camera: boolean;
@@ -210,10 +196,6 @@ class PermissionsService {
 
     return { microphone, camera, gallery };
   }
-
-  // ============================================
-  // SOLICITAR PERMISO ESPECÍFICO CON EXPLICACIÓN
-  // ============================================
 
   async requestPermissionWithExplanation(
     type: 'microphone' | 'camera' | 'gallery',
