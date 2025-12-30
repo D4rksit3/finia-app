@@ -190,4 +190,5 @@ apply plugin: 'com.google.gms.google-services'
             force 'androidx.appcompat:appcompat:1.6.1'
         }
     }
-}
+
+apply plugin: 'com.google.gms.google-services'

@@ -1,6 +1,5 @@
 import { Alert, Linking, Platform, PermissionsAndroid } from 'react-native';
 import { Camera } from 'expo-camera';
-import * as ImagePicker from 'expo-image-picker';
 
 class PermissionsService {
   
@@ -35,9 +34,15 @@ class PermissionsService {
   }
 
   async checkGalleryPermission(): Promise<boolean> {
+    if (Platform.OS !== 'android') {
+      return true;
+    }
+
     try {
-      const { status } = await ImagePicker.getMediaLibraryPermissionsAsync();
-      return status === 'granted';
+      const granted = await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+      );
+      return granted;
     } catch (error) {
       console.error('Error verificando permiso de galería:', error);
       return false;
@@ -135,32 +140,40 @@ class PermissionsService {
   }
 
   async requestGalleryPermission(): Promise<boolean> {
+    if (Platform.OS !== 'android') {
+      return true;
+    }
+
     try {
       console.log('🖼️ Solicitando permiso de galería...');
       
-      const { status: currentStatus } = await ImagePicker.getMediaLibraryPermissionsAsync();
-      
-      if (currentStatus === 'granted') {
-        console.log('✅ Permiso de galería ya concedido');
+      const hasPermission = await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
+      );
+
+      if (hasPermission) {
+        console.log('✅ Ya tiene permiso de galería');
         return true;
       }
 
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
+        {
+          title: 'Permiso de Galería',
+          message: 'FINIA necesita acceso a tus fotos.',
+          buttonNeutral: 'Preguntar después',
+          buttonNegative: 'Cancelar',
+          buttonPositive: 'Permitir',
+        }
+      );
 
-      if (status !== 'granted') {
-        Alert.alert(
-          'Permiso de Galería Requerido',
-          'FINIA necesita acceso a tu galería para seleccionar imágenes.',
-          [
-            { text: 'Cancelar', style: 'cancel' },
-            { text: 'Abrir Configuración', onPress: () => Linking.openSettings() }
-          ]
-        );
-        return false;
+      if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+        console.log('✅ Permiso de galería concedido');
+        return true;
       }
-
-      console.log('✅ Permiso de galería concedido');
-      return true;
+      
+      console.log('❌ Permiso de galería denegado');
+      return false;
 
     } catch (error) {
       console.error('❌ Error solicitando permiso de galería:', error);
