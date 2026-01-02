@@ -82,7 +82,7 @@ export default function AddScreen() {
       if (!hasPermission) {
         console.log('❌ [startListening] Permiso denegado');
         Alert.alert(
-          'Permiso Requerido',
+          'Permiso Requerido',b
           'FINIA necesita acceso al micrófono para el reconocimiento de voz.',
           [
             { text: 'Cancelar', style: 'cancel' },
